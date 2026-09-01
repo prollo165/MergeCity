@@ -1,9 +1,11 @@
 import {
+  Ages,
   Board,
   DEMOLITIONS_MAX,
   DEMOLITIONS_START,
   MERGES_PER_DEMOLITION,
   MergeEvent,
+  emptyAges,
   emptyBoard,
   highestTier,
   isGameOver,
@@ -13,6 +15,8 @@ import {
 
 export interface GameState {
   board: Board;
+  /** Baujahr je Grundstück – entscheidet, wo verschmolzen wird */
+  ages: Ages;
   /** queue[0] ist das Gebäude, das gerade gebaut wird */
   queue: number[];
   score: number;
@@ -37,6 +41,7 @@ export type GameAction =
 export function createGame(best = 0): GameState {
   return {
     board: emptyBoard(),
+    ages: emptyAges(),
     queue: refillQueue([], 1),
     score: 0,
     best,
@@ -62,7 +67,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (state.board[action.index] !== null) return state;
 
       const tier = state.queue[0];
-      const { board, events, points } = placeAndResolve(state.board, action.index, tier);
+      const moves = state.moves + 1;
+      const { board, ages, events, points } = placeAndResolve(state.board, state.ages, action.index, tier, moves);
 
       const mergeCount = state.mergeCount + events.length;
       const earnedDemolitions = Math.floor(mergeCount / MERGES_PER_DEMOLITION) - Math.floor(state.mergeCount / MERGES_PER_DEMOLITION);
@@ -75,6 +81,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         board,
+        ages,
         queue,
         score,
         best: Math.max(state.best, score),
@@ -83,7 +90,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         highest,
         over: isGameOver(board, demolitions),
         lastEvents: events,
-        moves: state.moves + 1,
+        moves,
       };
     }
 
@@ -94,11 +101,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       const board = state.board.slice();
       board[action.index] = null;
+      const ages = state.ages.slice();
+      ages[action.index] = 0;
       const demolitions = state.demolitions - 1;
 
       return {
         ...state,
         board,
+        ages,
         demolitions,
         over: isGameOver(board, demolitions),
         lastEvents: [],

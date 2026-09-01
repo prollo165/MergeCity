@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  Ages,
+  Board,
   CELLS,
   drawPiece,
+  emptyAges,
   emptyBoard,
   isGameOver,
   placeAndResolve,
@@ -13,99 +16,130 @@ import {
 import { createGame, gameReducer } from '../state';
 import { MAX_TIER } from '../tiers';
 
-test('zwei Rundhütten werden zum Lehmhaus', () => {
+/** Baut ein Testfeld: Gebäude in der Reihenfolge, in der sie gesetzt wurden. */
+function city(entries: Array<{ x: number; y: number; tier: number }>): { board: Board; ages: Ages } {
   const board = emptyBoard();
-  board[toIndex(0, 0)] = 1;
+  const ages = emptyAges();
+  entries.forEach((entry, i) => {
+    const index = toIndex(entry.x, entry.y);
+    board[index] = entry.tier;
+    ages[index] = i + 1;
+  });
+  return { board, ages };
+}
 
-  const result = placeAndResolve(board, toIndex(1, 0), 1);
+test('zwei Rundhütten werden zum Lehmhaus', () => {
+  const { board, ages } = city([{ x: 0, y: 0, tier: 1 }]);
 
-  assert.equal(result.board[toIndex(1, 0)], 2);
-  assert.equal(result.board[toIndex(0, 0)], null);
+  const result = placeAndResolve(board, ages, toIndex(1, 0), 1, 2);
+
   assert.equal(result.events.length, 1);
-  assert.ok(result.points > 0);
+  assert.equal(result.events[0].tier, 2);
+});
+
+test('der Neubau steht auf dem älteren Grundstück, nicht auf dem neuen', () => {
+  const { board, ages } = city([{ x: 3, y: 2, tier: 1 }]);
+  const old = toIndex(3, 2);
+  const fresh = toIndex(4, 2);
+
+  const result = placeAndResolve(board, ages, fresh, 1, 2);
+
+  assert.equal(result.board[old], 2, 'das Lehmhaus steht auf dem alten Grundstück');
+  assert.equal(result.board[fresh], null, 'das gerade bebaute Feld ist wieder frei');
+  assert.equal(result.events[0].at, old);
+  assert.equal(result.ages[old], 1, 'das Grundstück behält sein Baujahr');
 });
 
 test('drei Rundhütten überspringen eine Epoche', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = 1;
-  board[toIndex(2, 0)] = 1;
+  const { board, ages } = city([
+    { x: 0, y: 0, tier: 1 },
+    { x: 2, y: 0, tier: 1 },
+  ]);
 
-  // Die gesetzte Hütte verbindet beide zu einer Dreiergruppe.
-  const result = placeAndResolve(board, toIndex(1, 0), 1);
+  const result = placeAndResolve(board, ages, toIndex(1, 0), 1, 3);
 
-  assert.equal(result.board[toIndex(1, 0)], 3);
+  assert.equal(result.board[toIndex(0, 0)], 3, 'der Neubau steht auf der ältesten Hütte');
   assert.equal(result.events.length, 1);
   assert.equal(result.events[0].merged, 3);
 });
 
-test('vier Rundhütten überspringen zwei Epochen', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = 1;
-  board[toIndex(2, 0)] = 1;
-  board[toIndex(1, 1)] = 1;
+test('zwei Rundhütten an einem Lehmhaus ergeben eine Steinkate – auch gegenüberliegend', () => {
+  // [1][2][1] – die beiden Hütten berühren sich nicht, nur das Lehmhaus.
+  const { board, ages } = city([
+    { x: 1, y: 1, tier: 2 },
+    { x: 0, y: 1, tier: 1 },
+  ]);
 
-  const result = placeAndResolve(board, toIndex(1, 0), 1);
+  const result = placeAndResolve(board, ages, toIndex(2, 1), 1, 3);
 
-  assert.equal(result.board[toIndex(1, 0)], 4);
-});
-
-test('ein Lehmhaus neben zwei Rundhütten wird zur Steinkate', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = 1; // Rundhütte
-  board[toIndex(2, 0)] = 2; // Lehmhaus
-
-  // Die zweite Rundhütte verschmilzt erst zum Lehmhaus und dann weiter.
-  const result = placeAndResolve(board, toIndex(1, 0), 1);
-
-  assert.equal(result.board[toIndex(1, 0)], 3);
-  assert.equal(result.events.length, 2);
+  assert.equal(result.board[toIndex(1, 1)], 3, 'die Steinkate steht auf dem ältesten Grundstück');
   assert.deepEqual(
     result.events.map((event) => event.tier),
     [2, 3],
   );
 });
 
-test('diagonale Nachbarn verschmelzen nicht', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = 1;
+test('eine einzelne Hütte neben einem Lehmhaus verschmilzt nicht', () => {
+  const { board, ages } = city([{ x: 1, y: 1, tier: 2 }]);
 
-  const result = placeAndResolve(board, toIndex(1, 1), 1);
+  const result = placeAndResolve(board, ages, toIndex(2, 1), 1, 2);
 
   assert.equal(result.events.length, 0);
-  assert.equal(result.board[toIndex(1, 1)], 1);
+  assert.equal(result.board[toIndex(2, 1)], 1);
+  assert.equal(result.board[toIndex(1, 1)], 2);
 });
 
-test('ein einzelnes Gebäude bleibt stehen', () => {
-  const result = placeAndResolve(emptyBoard(), toIndex(3, 3), 1);
+test('diagonale Nachbarn gehören nicht zum Viertel', () => {
+  const { board, ages } = city([{ x: 0, y: 0, tier: 1 }]);
 
-  assert.equal(result.board[toIndex(3, 3)], 1);
+  const result = placeAndResolve(board, ages, toIndex(1, 1), 1, 2);
+
   assert.equal(result.events.length, 0);
+});
+
+test('eine Kette aus verschiedenen Stufen löst eine lange Reaktion aus', () => {
+  // Viertel mit je einem Bau der Stufen 1, 2 und 3 – eine weitere Hütte zündet alles.
+  const { board, ages } = city([
+    { x: 3, y: 0, tier: 3 },
+    { x: 2, y: 0, tier: 2 },
+    { x: 1, y: 0, tier: 1 },
+  ]);
+
+  const result = placeAndResolve(board, ages, toIndex(0, 0), 1, 4);
+
+  assert.deepEqual(
+    result.events.map((event) => event.tier),
+    [2, 3, 4],
+  );
+  assert.equal(result.board[toIndex(3, 0)], 4, 'der Turm wächst auf dem ältesten Grundstück');
 });
 
 test('die letzte Epoche ist das Ende der Leiter', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = MAX_TIER;
+  const { board, ages } = city([{ x: 0, y: 0, tier: MAX_TIER }]);
 
-  const result = placeAndResolve(board, toIndex(1, 0), MAX_TIER);
+  const result = placeAndResolve(board, ages, toIndex(1, 0), MAX_TIER, 2);
 
   assert.equal(result.events.length, 0);
+  assert.equal(result.board[toIndex(0, 0)], MAX_TIER);
   assert.equal(result.board[toIndex(1, 0)], MAX_TIER);
 });
 
 test('große Gruppen springen höchstens bis zur letzten Epoche', () => {
-  const board = emptyBoard();
-  board[toIndex(0, 0)] = MAX_TIER - 1;
-  board[toIndex(2, 0)] = MAX_TIER - 1;
-  board[toIndex(1, 1)] = MAX_TIER - 1;
+  const { board, ages } = city([
+    { x: 0, y: 0, tier: MAX_TIER - 1 },
+    { x: 2, y: 0, tier: MAX_TIER - 1 },
+    { x: 1, y: 1, tier: MAX_TIER - 1 },
+  ]);
 
-  const result = placeAndResolve(board, toIndex(1, 0), MAX_TIER - 1);
+  const result = placeAndResolve(board, ages, toIndex(1, 0), MAX_TIER - 1, 4);
 
-  assert.equal(result.board[toIndex(1, 0)], MAX_TIER);
+  assert.equal(result.board[toIndex(0, 0)], MAX_TIER);
 });
 
-test('das Raster ist sechs mal sechs Felder groß', () => {
-  assert.equal(CELLS, 36);
-  assert.equal(emptyBoard().length, 36);
+test('das Raster ist fünf mal fünf Felder groß', () => {
+  assert.equal(CELLS, 25);
+  assert.equal(emptyBoard().length, 25);
+  assert.equal(emptyAges().length, 25);
 });
 
 test('Spielende erst ohne Platz und ohne Abrissbirne', () => {
@@ -132,12 +166,14 @@ test('Reducer setzt, reißt ab und führt den Rekord mit', () => {
   game = gameReducer(game, { type: 'place', index: 0 });
   assert.equal(game.moves, 1);
   assert.notEqual(game.board[0], null);
+  assert.equal(game.ages[0], 1);
   assert.equal(game.queue.length, 3);
   assert.equal(game.best, game.score);
 
   const before = game.demolitions;
   game = gameReducer(game, { type: 'demolish', index: 0 });
   assert.equal(game.board[0], null);
+  assert.equal(game.ages[0], 0);
   assert.equal(game.demolitions, before - 1);
 });
 
@@ -157,4 +193,5 @@ test('Neustart behält den Rekord', () => {
   assert.equal(game.best, best);
   assert.equal(game.score, 0);
   assert.ok(game.board.every((cell) => cell === null));
+  assert.ok(game.ages.every((age) => age === 0));
 });

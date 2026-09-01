@@ -1,10 +1,21 @@
 import { MAX_TIER } from './tiers';
 
-export const GRID = 6;
+export const GRID = 5;
 export const CELLS = GRID * GRID;
 
 /** null = freies Grundstück, sonst die Stufe (1..MAX_TIER) */
 export type Board = Array<number | null>;
+
+/**
+ * Baujahr jedes Grundstücks (0 = unbebaut). Beim Verschmelzen entsteht der
+ * Neubau auf dem am längsten bebauten Grundstück der Gruppe – nicht dort, wo
+ * gerade gesetzt wurde.
+ */
+export type Ages = number[];
+
+export function emptyAges(): Ages {
+  return new Array(CELLS).fill(0);
+}
 
 export interface MergeEvent {
   /** Stufe, die neu entstanden ist */
@@ -19,6 +30,7 @@ export interface MergeEvent {
 
 export interface PlaceResult {
   board: Board;
+  ages: Ages;
   events: MergeEvent[];
   points: number;
 }
@@ -75,39 +87,96 @@ export function connectedGroup(board: Board, start: number, tier: number): numbe
   return group;
 }
 
-/** Ab so vielen zusammenhängenden gleichen Gebäuden wird verschmolzen. */
+/**
+ * Das Viertel um ein Gebäude: alle Häuser, die über bebaute Nachbarn
+ * miteinander verbunden sind – unabhängig von ihrer Stufe.
+ */
+export function district(board: Board, start: number): number[] {
+  if (board[start] === null) return [];
+  const seen = new Set<number>([start]);
+  const stack = [start];
+  const cells: number[] = [];
+  while (stack.length) {
+    const current = stack.pop()!;
+    cells.push(current);
+    for (const n of neighbours(current)) {
+      if (!seen.has(n) && board[n] !== null) {
+        seen.add(n);
+        stack.push(n);
+      }
+    }
+  }
+  return cells;
+}
+
+/** Ab so vielen gleichen Gebäuden im Viertel wird verschmolzen. */
 export const MERGE_MIN = 2;
 
 /**
  * Setzt ein Gebäude und löst alle Kettenreaktionen aus.
  *
- * Zwei zusammenhängende gleiche Gebäude ergeben die nächste Epoche; jedes
- * weitere Gebäude in der Gruppe bringt eine Epoche extra. Aus zwei Rundhütten
- * wird also ein Lehmhaus, aus drei Rundhütten gleich eine Steinkate. Der Neubau
- * entsteht dort, wo gebaut wurde, und kann sofort weiterverschmelzen: ein
- * Lehmhaus neben zwei Rundhütten wird darum ebenfalls zur Steinkate.
+ * Verschmolzen wird innerhalb eines Viertels, also über zusammenhängende
+ * Bebauung hinweg: Immer die niedrigste Stufe, die mindestens zweimal vorkommt,
+ * wird zu einem Bau zusammengefasst. Zwei Rundhütten ergeben ein Lehmhaus, drei
+ * gleich eine Steinkate – und zwei Rundhütten an einem Lehmhaus werden erst zum
+ * zweiten Lehmhaus und dann zur Steinkate, ganz gleich, wie sie liegen.
+ *
+ * Der Neubau entsteht auf dem am längsten bebauten Grundstück der Gruppe.
  */
-export function placeAndResolve(board: Board, index: number, tier: number): PlaceResult {
-  const next = board.slice();
-  next[index] = tier;
+export function placeAndResolve(
+  board: Board,
+  ages: Ages,
+  index: number,
+  tier: number,
+  stamp: number,
+): PlaceResult {
+  const nextBoard = board.slice();
+  const nextAges = ages.slice();
+  nextBoard[index] = tier;
+  nextAges[index] = stamp;
 
   const events: MergeEvent[] = [];
   let points = 1;
-  let current = tier;
+  let focus = index;
 
-  while (current < MAX_TIER) {
-    const group = connectedGroup(next, index, current);
-    if (group.length < MERGE_MIN) break;
-    for (const cell of group) next[cell] = null;
+  for (;;) {
+    const cells = district(nextBoard, focus);
+
+    // niedrigste Stufe suchen, die mindestens zweimal im Viertel steht
+    let level: number | null = null;
+    for (const cell of cells) {
+      const value = nextBoard[cell]!;
+      if (value >= MAX_TIER) continue;
+      if (level !== null && value >= level) continue;
+      const same = cells.filter((other) => nextBoard[other] === value);
+      if (same.length >= MERGE_MIN) level = value;
+    }
+    if (level === null) break;
+
+    const group = cells.filter((cell) => nextBoard[cell] === level);
+    // Ältestes Grundstück gewinnt; bei gleichem Alter das niedrigere Feld.
+    const anchor = group.reduce((oldest, cell) =>
+      nextAges[cell] < nextAges[oldest] || (nextAges[cell] === nextAges[oldest] && cell < oldest) ? cell : oldest,
+    );
+    const anchorAge = nextAges[anchor];
+
+    for (const cell of group) {
+      nextBoard[cell] = null;
+      nextAges[cell] = 0;
+    }
+
     // Jedes Gebäude über das zweite hinaus überspringt eine weitere Epoche.
-    current = Math.min(MAX_TIER, current + (group.length - 1));
-    next[index] = current;
-    const gained = pointsForTier(current);
+    const grown = Math.min(MAX_TIER, level + (group.length - 1));
+    nextBoard[anchor] = grown;
+    nextAges[anchor] = anchorAge;
+
+    const gained = pointsForTier(grown);
     points += gained;
-    events.push({ tier: current, at: index, merged: group.length, points: gained });
+    events.push({ tier: grown, at: anchor, merged: group.length, points: gained });
+    focus = anchor;
   }
 
-  return { board: next, events, points };
+  return { board: nextBoard, ages: nextAges, events, points };
 }
 
 /** Gibt es noch mindestens eine mögliche Aktion? */

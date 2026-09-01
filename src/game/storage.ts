@@ -11,6 +11,7 @@ export async function saveGame(state: GameState): Promise<void> {
   try {
     const payload = {
       board: state.board,
+      ages: state.ages,
       queue: state.queue,
       score: state.score,
       best: state.best,
@@ -41,10 +42,13 @@ export async function loadGame(): Promise<GameState | null> {
     if (!isValidBoard(data?.board)) return null;
     if (!Array.isArray(data.queue) || data.queue.length === 0) return null;
 
+    const ages = Array.isArray(data.ages) && data.ages.length === CELLS ? data.ages.map((a: unknown) => Number(a) || 0) : undefined;
+
     const base = createGame(Number(data.best) || 0);
     return {
       ...base,
       board: data.board,
+      ages: ages ?? base.ages,
       queue: data.queue.map((t: unknown) => Number(t) || 1),
       score: Number(data.score) || 0,
       best: Math.max(Number(data.best) || 0, Number(data.score) || 0),
