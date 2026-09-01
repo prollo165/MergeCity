@@ -147,14 +147,21 @@ export function Board({ board, layout, demolishMode, onSelect, flash }: BoardPro
    */
   const handlePress = useCallback(
     (event: GestureResponderEvent) => {
-      const native = event.nativeEvent as GestureResponderEvent['nativeEvent'] & { clientX?: number; clientY?: number };
+      const native = event.nativeEvent as GestureResponderEvent['nativeEvent'] & {
+        clientX?: number;
+        clientY?: number;
+        changedTouches?: ArrayLike<{ pageX?: number; pageY?: number; clientX?: number; clientY?: number }>;
+      };
       let px = native.locationX;
       let py = native.locationY;
 
       if (typeof px !== 'number' || typeof py !== 'number' || Number.isNaN(px)) {
+        // Im Web kommt je nach Eingabeart ein Maus-, Pointer- oder Touch-Event an.
+        const touch = native.changedTouches?.length ? native.changedTouches[0] : undefined;
+        const source = touch ?? native;
+        const pageX = typeof source.pageX === 'number' ? source.pageX : source.clientX;
+        const pageY = typeof source.pageY === 'number' ? source.pageY : source.clientY;
         const origin = originRef.current;
-        const pageX = typeof native.pageX === 'number' ? native.pageX : native.clientX;
-        const pageY = typeof native.pageY === 'number' ? native.pageY : native.clientY;
         if (!origin || typeof pageX !== 'number' || typeof pageY !== 'number') return;
         px = pageX - origin.x;
         py = pageY - origin.y;
