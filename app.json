@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "MergeCity",
+    "slug": "mergecity",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "mergecity",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#DCE9E2",
+    "primaryColor": "#C7643C",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.prollo165.mergecity",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.prollo165.mergecity",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#DCE9E2",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#DCE9E2"
+        }
+      ]
+    ]
+  }
+}
