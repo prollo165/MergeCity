@@ -10,6 +10,11 @@
     "backgroundColor": "#DCE9E2",
     "primaryColor": "#C7643C",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#DCE9E2"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.prollo165.mergecity",
@@ -22,10 +27,10 @@
       "package": "com.prollo165.mergecity",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#DCE9E2",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#DCE9E2"
       },
       "predictiveBackGestureEnabled": false,
       "edgeToEdgeEnabled": true
@@ -33,17 +38,6 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 220,
-          "resizeMode": "contain",
-          "backgroundColor": "#DCE9E2"
-        }
-      ]
-    ]
+    }
   }
 }

@@ -34,6 +34,16 @@ Danach den QR-Code mit **Expo Go** (iOS/Android) scannen – Telefon und Rechner
 müssen im selben WLAN sein. Alternativ `npx expo start --tunnel`, wenn das Netz
 keine direkte Verbindung erlaubt.
 
+Das Projekt liegt bewusst auf **Expo SDK 54** (React Native 0.81): Das ist die
+SDK, die die Store-Fassung von Expo Go unterstützt. Neuere SDKs lassen sich mit
+der Expo Go aus App Store und Play Store nicht öffnen – dafür bräuchte es einen
+Development Build. Vor einem SDK-Wechsel also prüfen, was Expo Go aktuell
+mitbringt:
+
+```bash
+curl https://api.expo.dev/v2/versions   # Feld "expoGoSdkVersion"
+```
+
 Weitere Ziele: `npm run android`, `npm run ios`, `npm run web`.
 
 ## Projektstruktur
@@ -81,6 +91,10 @@ Android-Icons aus derselben Formensprache wie das Spiel.
    Domain umstellen – aktuell steht dort `com.prollo165.mergecity`.
 3. `npx eas build --platform ios --profile production`
 4. `npx eas submit --platform ios --latest`
+
+Ein Store-Build ist nicht an Expo Go gebunden: Wer eine neuere SDK möchte,
+hebt die Abhängigkeiten an und baut einen Development Build – Expo Go bleibt
+dann nur noch für schnelle Tests auf SDK 54.
 
 Für den Store-Eintrag fehlen noch Screenshots, Beschreibungstexte und die
 Datenschutzangabe. Das Spiel sammelt keine Daten und benötigt keine
