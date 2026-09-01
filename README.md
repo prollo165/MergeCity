@@ -1,8 +1,8 @@
 # MergeCity
 
 Ein Puzzlespiel im Geist von *High Rise – A Puzzle Cityscape*: Du setzt Gebäude
-auf ein isometrisches Raster, drei gleiche verschmelzen zum nächstgrößeren – und
-mit jeder Verschmelzung rückt die Stadt eine Epoche weiter. Von der
+auf ein isometrisches 6×6-Raster, zwei gleiche verschmelzen zum nächstgrößeren –
+und mit jeder Verschmelzung rückt die Stadt eine Epoche weiter. Von der
 Steinzeit-Rundhütte bis zur Arkologie der Zukunft liegen fünfzehn Stufen.
 
 Die Oberfläche bleibt bewusst zurückhaltend: dünne Typografie, viel Weißraum,
@@ -11,14 +11,28 @@ keine Verzierungen. Die Farbigkeit steckt allein in der Stadt.
 ## Spielprinzip
 
 - Tippe auf ein freies Grundstück, um das aktuelle Gebäude zu setzen.
-- **Drei oder mehr** waagerecht/senkrecht zusammenhängende gleiche Gebäude
-  verschmelzen zum Bau der nächsten Epoche – genau dort, wo du gebaut hast.
-  Kettenreaktionen zählen doppelt: Sie geben mehr Punkte und füllen die
-  Abrissbirne schneller.
-- Die **Abrissbirne** entfernt ein Gebäude. Sie füllt sich alle fünf
+- **Zwei** waagerecht/senkrecht zusammenhängende gleiche Gebäude verschmelzen zum
+  Bau der nächsten Epoche – genau dort, wo du gebaut hast. Jedes weitere Haus in
+  der Gruppe überspringt eine Epoche zusätzlich: aus drei Rundhütten wird
+  unmittelbar eine Steinkate, aus vier ein Tempel.
+- Weil der Neubau sofort weiterverschmilzt, ergibt auch ein Lehmhaus neben zwei
+  Rundhütten eine Steinkate: Die Hütten werden erst zum Lehmhaus, die beiden
+  Lehmhäuser dann zur Steinkate.
+- Die **Abrissbirne** entfernt ein Gebäude. Sie füllt sich alle zehn
   Verschmelzungen wieder auf (maximal fünf Ladungen).
 - Vorbei ist es, wenn kein Grundstück mehr frei ist *und* keine Abrissbirne mehr
   übrig ist.
+
+## Blickwinkel
+
+Die Stadt lässt sich von allen vier Seiten und aus drei Höhen betrachten:
+
+- **Drehen:** quer über das Spielfeld ziehen oder die beiden runden Schaltflächen
+  unter dem Bauplatz benutzen. Vier Vierteldrehungen, die Häuser wandern
+  animiert an ihren neuen Platz und drehen ihre Dachfirste mit.
+- **Kippen:** senkrecht über das Spielfeld ziehen. Drei Stufen zwischen flachem
+  Seitenblick und steiler Draufsicht; je steiler, desto kürzer erscheinen die
+  Türme – wie beim Kippen eines echten Modells.
 
 Der Spielstand (inklusive Rekord) wird lokal gesichert und beim Start wieder
 geladen.
@@ -57,9 +71,9 @@ src/game/
   storage.ts                 Spielstand in AsyncStorage
   __tests__/logic.test.ts    Tests der Spielregeln
 src/ui/
-  iso.ts, layout.ts          Isometrische Projektion und Feldmaße
+  iso.ts, layout.ts          Projektion, Drehung, Kippwinkel, Feldmaße
   Building.tsx               Prozedurale Gebäude als SVG (keine Bilddateien)
-  Plate.tsx, Board.tsx       Bauplatz, Kacheln, Trefferprüfung, Animationen
+  Plate.tsx, Board.tsx       Bauplatz, Kacheln, Kamera-Gesten, Trefferprüfung
   Hud.tsx, Dock.tsx          Punkte, Epoche, Vorschau, Schaltflächen
   Modals.tsx, theme.ts       Anleitung, Chronik, Spielende, Design-Tokens
 scripts/generate-assets.js   Erzeugt Icon, Splash und Android-Icons

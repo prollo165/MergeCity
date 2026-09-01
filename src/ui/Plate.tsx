@@ -13,8 +13,8 @@ interface PlateProps {
 
 /** Der Bauplatz: eine leicht erhabene Platte mit einzelnen Grundstücken. */
 export const Plate = React.memo(function Plate({ layout, highlight }: PlateProps) {
-  const { tw, plate } = layout;
-  const { hw, hh } = projector(tw);
+  const { tw, plate, tilt } = layout;
+  const { hw, hh } = projector(tw, tilt);
   const g = (x: number, y: number): Point => [(x - y) * hw, (x + y) * hh];
   const m = PLATE_MARGIN;
   const t = plate.thickness;

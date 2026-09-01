@@ -1,13 +1,17 @@
 import React from 'react';
 import { Circle, Ellipse, G, Path, Polygon } from 'react-native-svg';
 import { Block, TierSpec, tierSpec } from '../game/tiers';
-import { Point, Projector, polygon, projector } from './iso';
+import { Point, Projector, Rotation, TILTS, polygon, projector, rotateOffset } from './iso';
 import { shade } from './theme';
 
 interface BuildingProps {
   tier: number;
   /** Kachelbreite in Pixeln */
   tw: number;
+  /** Blickrichtung – das Gebäude dreht sich mit dem Bauplatz */
+  rotation?: Rotation;
+  /** Kippwinkel der Kamera */
+  tilt?: number;
   /** Skaliert das Gebäude (z. B. für die Vorschau) */
   scale?: number;
 }
@@ -21,14 +25,16 @@ interface BoxGeometry {
   z1: number;
 }
 
-function boxFrom(block: Block, z0: number): BoxGeometry {
-  const dx = block.dx ?? 0;
-  const dy = block.dy ?? 0;
+function boxFrom(block: Block, z0: number, rotation: Rotation): BoxGeometry {
+  const [dx, dy] = rotateOffset(block.dx ?? 0, block.dy ?? 0, rotation);
+  const turned = rotation % 2 === 1;
+  const fw = turned ? block.fd : block.fw;
+  const fd = turned ? block.fw : block.fd;
   return {
-    x0: dx - block.fw / 2,
-    x1: dx + block.fw / 2,
-    y0: dy - block.fd / 2,
-    y1: dy + block.fd / 2,
+    x0: dx - fw / 2,
+    x1: dx + fw / 2,
+    y0: dy - fd / 2,
+    y1: dy + fd / 2,
     z0,
     z1: z0 + block.h,
   };
@@ -329,18 +335,20 @@ function trees(g: BoxGeometry, p: Projector['p'], color: string, key: string) {
   return nodes;
 }
 
-function Facade({ spec, tw }: { spec: TierSpec; tw: number }) {
-  const { p, hw } = projector(tw);
+function Facade({ spec, tw, rotation, tilt }: { spec: TierSpec; tw: number; rotation: Rotation; tilt: number }) {
+  const { p, hw } = projector(tw, tilt);
   const nodes: React.ReactNode[] = [];
   const props = spec.props ?? [];
 
   let z = 0;
   const boxes: BoxGeometry[] = [];
   for (const block of spec.blocks) {
-    const g = boxFrom(block, z);
+    const g = boxFrom(block, z, rotation);
     boxes.push(g);
     z = g.z1;
   }
+  // Ein gedrehtes Haus zeigt den Dachfirst zur anderen Seite.
+  const turned = rotation % 2 === 1;
 
   // Bodenschatten
   const shadow = p(0, 0, 0);
@@ -453,13 +461,13 @@ function Facade({ spec, tw }: { spec: TierSpec; tw: number }) {
       nodes.push(<G key="roof">{coneRoof(top, p, spec, 1.0, hw)}</G>);
       break;
     case 'gable':
-      nodes.push(<G key="roof">{gableRoof(top, p, spec, 0.55, 'x')}</G>);
+      nodes.push(<G key="roof">{gableRoof(top, p, spec, 0.55, turned ? 'y' : 'x')}</G>);
       break;
     case 'hip':
       nodes.push(<G key="roof">{hipRoof(top, p, spec, 0.5)}</G>);
       break;
     case 'pediment':
-      nodes.push(<G key="roof">{gableRoof(top, p, spec, 0.42, 'y', 0.08)}</G>);
+      nodes.push(<G key="roof">{gableRoof(top, p, spec, 0.42, turned ? 'x' : 'y', 0.08)}</G>);
       break;
     case 'dome':
       nodes.push(<G key="roof">{domeRoof(top, p, spec, hw)}</G>);
@@ -517,12 +525,15 @@ function Facade({ spec, tw }: { spec: TierSpec; tw: number }) {
 }
 
 /** Ein prozedural gezeichnetes, isometrisches Gebäude der jeweiligen Zeitstufe. */
-export const Building = React.memo(function Building({ tier, tw, scale = 1 }: BuildingProps) {
+export const Building = React.memo(function Building({
+  tier,
+  tw,
+  rotation = 0,
+  tilt = TILTS[1],
+  scale = 1,
+}: BuildingProps) {
   const spec = tierSpec(tier);
-  if (scale === 1) return <Facade spec={spec} tw={tw} />;
-  return (
-    <G scale={scale}>
-      <Facade spec={spec} tw={tw} />
-    </G>
-  );
+  const facade = <Facade spec={spec} tw={tw} rotation={rotation} tilt={tilt} />;
+  if (scale === 1) return facade;
+  return <G scale={scale}>{facade}</G>;
 });

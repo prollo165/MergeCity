@@ -10,6 +10,7 @@ import { Board } from './src/ui/Board';
 import { Dock } from './src/ui/Dock';
 import { Hud } from './src/ui/Hud';
 import { ChronicleModal, EraToast, GameOverModal, IntroModal } from './src/ui/Modals';
+import { DEFAULT_TILT, Rotation, TILTS, normalizeRotation } from './src/ui/iso';
 import { boardLayout, fitTileWidth } from './src/ui/layout';
 import { theme } from './src/ui/theme';
 
@@ -32,6 +33,9 @@ function GameScreen() {
   const [showIntro, setShowIntro] = useState(false);
   const [showChronicle, setShowChronicle] = useState(false);
   const [toast, setToast] = useState<{ tier: number; key: number } | null>(null);
+  // Blickwinkel auf die Stadt: Vierteldrehungen und Kippstufen.
+  const [rotation, setRotation] = useState<Rotation>(0);
+  const [tiltStep, setTiltStep] = useState(DEFAULT_TILT);
   const previousHighest = useRef(state.highest);
 
   // Spielstand laden
@@ -69,8 +73,21 @@ function GameScreen() {
 
   const layout = useMemo(() => {
     const availableHeight = height - insets.top - insets.bottom - HUD_HEIGHT - DOCK_HEIGHT - 24;
-    return boardLayout(fitTileWidth(width - 24, availableHeight));
-  }, [height, insets.bottom, insets.top, width]);
+    return boardLayout(fitTileWidth(width - 24, availableHeight), TILTS[tiltStep]);
+  }, [height, insets.bottom, insets.top, tiltStep, width]);
+
+  const handleRotate = useCallback((delta: number) => {
+    setRotation((current) => normalizeRotation(current + delta));
+    tap(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const handleTilt = useCallback((delta: number) => {
+    setTiltStep((current) => {
+      const next = Math.max(0, Math.min(TILTS.length - 1, current + delta));
+      if (next !== current) tap(Haptics.ImpactFeedbackStyle.Light);
+      return next;
+    });
+  }, []);
 
   const boardFull = useMemo(() => state.board.every((cell) => cell !== null), [state.board]);
 
@@ -121,8 +138,11 @@ function GameScreen() {
         <Board
           board={state.board}
           layout={layout}
+          rotation={rotation}
           demolishMode={demolishMode}
           onSelect={handleSelect}
+          onRotate={handleRotate}
+          onTilt={handleTilt}
           flash={flash}
         />
         <View style={styles.toastLayer} pointerEvents="none">

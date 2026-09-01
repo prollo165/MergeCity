@@ -27,7 +27,8 @@ export function IntroModal({ visible, onClose }: { visible: boolean; onClose: ()
         <Text style={styles.title}>Von der Hütte zum Turm</Text>
         <View style={styles.rules}>
           <Rule text="Tippe auf ein freies Grundstück, um das nächste Gebäude zu setzen." />
-          <Rule text="Drei gleiche Gebäude nebeneinander verschmelzen zu einem Bau der nächsten Epoche." />
+          <Rule text="Zwei gleiche Gebäude nebeneinander verschmelzen zum Bau der nächsten Epoche. Jedes weitere Haus in der Gruppe überspringt eine Epoche zusätzlich: drei Rundhütten ergeben gleich eine Steinkate." />
+          <Rule text="Zieh quer über die Stadt, um sie zu drehen, oder nach oben und unten, um sie zu kippen." />
           <Rule text="Steht kein Platz mehr zur Verfügung, hilft die Abrissbirne – sie füllt sich beim Verschmelzen wieder auf." />
           <Rule text="Fünfzehn Epochen liegen zwischen der Steinzeit und der Arkologie." />
         </View>

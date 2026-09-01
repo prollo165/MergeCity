@@ -1,6 +1,6 @@
 import { MAX_TIER } from './tiers';
 
-export const GRID = 5;
+export const GRID = 6;
 export const CELLS = GRID * GRID;
 
 /** null = freies Grundstück, sonst die Stufe (1..MAX_TIER) */
@@ -75,10 +75,17 @@ export function connectedGroup(board: Board, start: number, tier: number): numbe
   return group;
 }
 
+/** Ab so vielen zusammenhängenden gleichen Gebäuden wird verschmolzen. */
+export const MERGE_MIN = 2;
+
 /**
  * Setzt ein Gebäude und löst alle Kettenreaktionen aus.
- * Ab drei zusammenhängenden gleichen Gebäuden entsteht das Gebäude der nächsten Epoche
- * – und zwar genau dort, wo gebaut wurde.
+ *
+ * Zwei zusammenhängende gleiche Gebäude ergeben die nächste Epoche; jedes
+ * weitere Gebäude in der Gruppe bringt eine Epoche extra. Aus zwei Rundhütten
+ * wird also ein Lehmhaus, aus drei Rundhütten gleich eine Steinkate. Der Neubau
+ * entsteht dort, wo gebaut wurde, und kann sofort weiterverschmelzen: ein
+ * Lehmhaus neben zwei Rundhütten wird darum ebenfalls zur Steinkate.
  */
 export function placeAndResolve(board: Board, index: number, tier: number): PlaceResult {
   const next = board.slice();
@@ -90,12 +97,12 @@ export function placeAndResolve(board: Board, index: number, tier: number): Plac
 
   while (current < MAX_TIER) {
     const group = connectedGroup(next, index, current);
-    if (group.length < 3) break;
+    if (group.length < MERGE_MIN) break;
     for (const cell of group) next[cell] = null;
-    current += 1;
+    // Jedes Gebäude über das zweite hinaus überspringt eine weitere Epoche.
+    current = Math.min(MAX_TIER, current + (group.length - 1));
     next[index] = current;
-    // Größere Gruppen geben einen Bonus
-    const gained = Math.round(pointsForTier(current) * (1 + (group.length - 3) * 0.4));
+    const gained = pointsForTier(current);
     points += gained;
     events.push({ tier: current, at: index, merged: group.length, points: gained });
   }
@@ -131,9 +138,9 @@ export interface Rng {
  */
 export function drawPiece(highest: number, rng: Rng = Math.random): number {
   const weights: Array<[number, number]> = [[1, 100]];
-  if (highest >= 4) weights.push([2, 26]);
-  if (highest >= 7) weights.push([3, 12]);
-  if (highest >= 10) weights.push([4, 6]);
+  if (highest >= 5) weights.push([2, 24]);
+  if (highest >= 8) weights.push([3, 11]);
+  if (highest >= 11) weights.push([4, 5]);
 
   const total = weights.reduce((sum, [, w]) => sum + w, 0);
   let roll = rng() * total;
@@ -153,4 +160,4 @@ export function refillQueue(queue: number[], highest: number, length = 3, rng: R
 /** Abrissbirnen: Startguthaben und Nachschub über verschmolzene Gebäude */
 export const DEMOLITIONS_START = 2;
 export const DEMOLITIONS_MAX = 5;
-export const MERGES_PER_DEMOLITION = 5;
+export const MERGES_PER_DEMOLITION = 10;

@@ -1,48 +1,100 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, GestureResponderEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg from 'react-native-svg';
+import {
+  Animated,
+  Easing,
+  GestureResponderEvent,
+  PanResponder,
+  PanResponderGestureState,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Svg, { G, Path } from 'react-native-svg';
 import { Board as BoardModel, GRID, toIndex, toXY } from '../game/logic';
 import { tierHeight, tierSpec } from '../game/tiers';
 import { Building } from './Building';
-import { FLOOR_RATIO, cellCenter, pointToCell } from './iso';
+import { Rotation, cellCenter, floorHeight, pointToCell, rotateCell, unrotateCell } from './iso';
 import { BoardLayout } from './layout';
 import { Plate } from './Plate';
 import { theme } from './theme';
 
+/** Zieh-Weg in Pixeln für eine Vierteldrehung bzw. eine Kippstufe. */
+const ROTATE_STEP = 64;
+const TILT_STEP = 70;
+
 interface BoardProps {
   board: BoardModel;
   layout: BoardLayout;
+  rotation: Rotation;
   demolishMode: boolean;
   onSelect: (index: number) => void;
+  onRotate: (delta: number) => void;
+  onTilt: (delta: number) => void;
   /** Punkteanzeige nach einer Verschmelzung */
   flash?: { index: number; points: number; key: number } | null;
 }
 
-function Tile({ tier, tw, canvas, left, top }: { tier: number; tw: number; canvas: BoardLayout['canvas']; left: number; top: number }) {
-  const grow = useRef(new Animated.Value(0)).current;
+function Tile({
+  tier,
+  tw,
+  tilt,
+  rotation,
+  canvas,
+  left,
+  top,
+}: {
+  tier: number;
+  tw: number;
+  tilt: number;
+  rotation: Rotation;
+  canvas: BoardLayout['canvas'];
+  left: number;
+  top: number;
+}) {
+  const appear = useRef(new Animated.Value(0)).current;
+  const position = useRef(new Animated.ValueXY({ x: left, y: top })).current;
+  const placed = useRef(false);
 
   useEffect(() => {
-    Animated.spring(grow, {
-      toValue: 1,
-      friction: 6,
-      tension: 90,
+    Animated.spring(appear, { toValue: 1, friction: 6, tension: 90, useNativeDriver: true }).start();
+  }, [appear]);
+
+  // Beim Drehen und Kippen wandern die Häuser an ihren neuen Platz.
+  useEffect(() => {
+    if (!placed.current) {
+      placed.current = true;
+      position.setValue({ x: left, y: top });
+      return;
+    }
+    Animated.spring(position, {
+      toValue: { x: left, y: top },
+      friction: 10,
+      tension: 80,
       useNativeDriver: true,
     }).start();
-  }, [grow]);
+  }, [left, position, top]);
 
-  const scale = grow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
+  const pivot = canvas.height / 2 - canvas.groundY;
+  const scale = appear.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
 
   return (
     <Animated.View
       pointerEvents="none"
       style={{
         position: 'absolute',
-        left,
-        top,
+        left: 0,
+        top: 0,
         width: canvas.width,
         height: canvas.height,
-        opacity: grow,
-        transform: [{ translateY: canvas.height / 2 - canvas.groundY }, { scale }, { translateY: canvas.groundY - canvas.height / 2 }],
+        opacity: appear,
+        transform: [
+          { translateX: position.x },
+          { translateY: position.y },
+          { translateY: pivot },
+          { scale },
+          { translateY: -pivot },
+        ],
       }}
     >
       <Svg
@@ -50,7 +102,7 @@ function Tile({ tier, tw, canvas, left, top }: { tier: number; tw: number; canva
         height={canvas.height}
         viewBox={`${-canvas.width / 2} ${-canvas.groundY} ${canvas.width} ${canvas.height}`}
       >
-        <Building tier={tier} tw={tw} />
+        <Building tier={tier} tw={tw} rotation={rotation} tilt={tilt} />
       </Svg>
     </Animated.View>
   );
@@ -87,8 +139,53 @@ function FloatingScore({ points, left, top, trigger }: { points: number; left: n
   );
 }
 
-export function Board({ board, layout, demolishMode, onSelect, flash }: BoardProps) {
-  const { tw, canvas, originX, originY } = layout;
+function RotateButton({ direction, onPress }: { direction: 1 | -1; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [styles.viewButton, pressed && { backgroundColor: '#FFFFFF' }]}
+    >
+      <Svg width={18} height={18} viewBox="0 0 24 24">
+        <G transform={direction === -1 ? 'translate(24,0) scale(-1,1)' : undefined}>
+          <Path
+            d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"
+            stroke={theme.color.inkSoft}
+            strokeWidth={2}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <Path
+            d="M20.5 3.4v5.2h-5.2"
+            stroke={theme.color.inkSoft}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </G>
+      </Svg>
+    </Pressable>
+  );
+}
+
+/** Liest die Bildschirmposition einer Berührung – plattformübergreifend. */
+function touchPoint(event: GestureResponderEvent, gesture: PanResponderGestureState) {
+  const native = event.nativeEvent as GestureResponderEvent['nativeEvent'] & {
+    clientX?: number;
+    clientY?: number;
+    changedTouches?: ArrayLike<{ pageX?: number; pageY?: number; clientX?: number; clientY?: number }>;
+  };
+  const touch = native.changedTouches?.length ? native.changedTouches[0] : undefined;
+  const source = touch ?? native;
+  const x = source.pageX ?? source.clientX ?? gesture.x0;
+  const y = source.pageY ?? source.clientY ?? gesture.y0;
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  return { x, y };
+}
+
+export function Board({ board, layout, rotation, demolishMode, onSelect, onRotate, onTilt, flash }: BoardProps) {
+  const { tw, tilt, canvas, originX, originY } = layout;
 
   const containerRef = useRef<View>(null);
   const originRef = useRef<{ x: number; y: number } | null>(null);
@@ -101,6 +198,26 @@ export function Board({ board, layout, demolishMode, onSelect, flash }: BoardPro
 
   const occupied = useMemo(() => board.map((cell, i) => (cell ? i : -1)).filter((i) => i >= 0), [board]);
 
+  /** Bildschirmmitte eines Feldes – unter Berücksichtigung der Blickrichtung. */
+  const screenCenter = useCallback(
+    (index: number) => {
+      const { x, y } = toXY(index);
+      const turned = rotateCell(x, y, rotation, GRID);
+      return cellCenter(turned.x, turned.y, tw, tilt);
+    },
+    [rotation, tilt, tw],
+  );
+
+  /** Tiefensortierung: was weiter vorne steht, wird später gezeichnet. */
+  const depth = useCallback(
+    (index: number) => {
+      const { x, y } = toXY(index);
+      const turned = rotateCell(x, y, rotation, GRID);
+      return turned.x + turned.y;
+    },
+    [rotation],
+  );
+
   /**
    * Trefferprüfung. Beim Bauen hat das freie Grundstück Vorrang – sonst würden
    * niedrige Häuser die Bauplätze hinter sich blockieren. Beim Abriss zählt
@@ -111,108 +228,140 @@ export function Board({ board, layout, demolishMode, onSelect, flash }: BoardPro
       const localX = px - originX;
       const localY = py - originY;
 
-      const ground = pointToCell(localX, localY, tw);
-      const groundIndex =
-        ground.x >= 0 && ground.y >= 0 && ground.x < GRID && ground.y < GRID ? toIndex(ground.x, ground.y) : null;
+      const seen = pointToCell(localX, localY, tw, tilt);
+      let groundIndex: number | null = null;
+      if (seen.x >= 0 && seen.y >= 0 && seen.x < GRID && seen.y < GRID) {
+        const logical = unrotateCell(seen.x, seen.y, rotation, GRID);
+        groundIndex = toIndex(logical.x, logical.y);
+      }
 
       if (!demolishMode && groundIndex !== null && board[groundIndex] === null) return groundIndex;
 
-      const sorted = occupied.slice().sort((a, b) => {
-        const A = toXY(a);
-        const B = toXY(b);
-        return B.x + B.y - (A.x + A.y);
-      });
-
+      const sorted = occupied.slice().sort((a, b) => depth(b) - depth(a));
       for (const index of sorted) {
         const tier = board[index]!;
-        const { x, y } = toXY(index);
-        const [cx, cy] = cellCenter(x, y, tw);
+        const [cx, cy] = screenCenter(index);
         const spec = tierSpec(tier);
         const halfWidth = Math.max(spec.blocks[0].fw, 0.5) * tw * 0.6;
-        const height = tierHeight(tier) * tw * FLOOR_RATIO + tw * 0.35;
-        if (localX >= cx - halfWidth && localX <= cx + halfWidth && localY >= cy - height && localY <= cy + tw * 0.22) {
+        const height = tierHeight(tier) * floorHeight(tw, tilt) + tw * 0.3;
+        if (localX >= cx - halfWidth && localX <= cx + halfWidth && localY >= cy - height && localY <= cy + tw * 0.2) {
           return index;
         }
       }
 
       return groundIndex;
     },
-    [board, demolishMode, occupied, originX, originY, tw],
+    [board, demolishMode, depth, occupied, originX, originY, rotation, screenCenter, tilt, tw],
   );
 
-  /**
-   * Tippposition relativ zum Spielfeld. Auf nativen Plattformen liefert das
-   * Event locationX/locationY; im Web (react-native-web) kommt das rohe
-   * DOM-Event an, deshalb rechnen wir dort über die gemessene Position.
-   */
-  const handlePress = useCallback(
-    (event: GestureResponderEvent) => {
-      const native = event.nativeEvent as GestureResponderEvent['nativeEvent'] & {
-        clientX?: number;
-        clientY?: number;
-        changedTouches?: ArrayLike<{ pageX?: number; pageY?: number; clientX?: number; clientY?: number }>;
-      };
-      let px = native.locationX;
-      let py = native.locationY;
-
-      if (typeof px !== 'number' || typeof py !== 'number' || Number.isNaN(px)) {
-        // Im Web kommt je nach Eingabeart ein Maus-, Pointer- oder Touch-Event an.
-        const touch = native.changedTouches?.length ? native.changedTouches[0] : undefined;
-        const source = touch ?? native;
-        const pageX = typeof source.pageX === 'number' ? source.pageX : source.clientX;
-        const pageY = typeof source.pageY === 'number' ? source.pageY : source.clientY;
-        const origin = originRef.current;
-        if (!origin || typeof pageX !== 'number' || typeof pageY !== 'number') return;
-        px = pageX - origin.x;
-        py = pageY - origin.y;
-      }
-
-      const index = hitTest(px, py);
+  // Der PanResponder wird einmal erzeugt; die aktuellen Rückrufe liegen im Ref.
+  const actions = useRef({ tap: (_x: number, _y: number) => {}, rotate: (_d: number) => {}, tilt: (_d: number) => {} });
+  actions.current = {
+    tap: (px, py) => {
+      const origin = originRef.current;
+      if (!origin) return;
+      const index = hitTest(px - origin.x, py - origin.y);
       if (index !== null) onSelect(index);
     },
-    [hitTest, onSelect],
-  );
+    rotate: onRotate,
+    tilt: onTilt,
+  };
+
+  const drag = useRef({ axis: null as null | 'x' | 'y', consumedX: 0, consumedY: 0, moved: false });
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4,
+      onPanResponderGrant: () => {
+        drag.current = { axis: null, consumedX: 0, consumedY: 0, moved: false };
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const state = drag.current;
+        if (Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6) state.moved = true;
+        if (!state.axis && (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10)) {
+          state.axis = Math.abs(gesture.dx) >= Math.abs(gesture.dy) ? 'x' : 'y';
+        }
+
+        if (state.axis === 'x') {
+          while (gesture.dx - state.consumedX >= ROTATE_STEP) {
+            state.consumedX += ROTATE_STEP;
+            actions.current.rotate(1);
+          }
+          while (gesture.dx - state.consumedX <= -ROTATE_STEP) {
+            state.consumedX -= ROTATE_STEP;
+            actions.current.rotate(-1);
+          }
+        } else if (state.axis === 'y') {
+          while (gesture.dy - state.consumedY >= TILT_STEP) {
+            state.consumedY += TILT_STEP;
+            actions.current.tilt(1);
+          }
+          while (gesture.dy - state.consumedY <= -TILT_STEP) {
+            state.consumedY -= TILT_STEP;
+            actions.current.tilt(-1);
+          }
+        }
+      },
+      onPanResponderRelease: (event, gesture) => {
+        if (drag.current.moved) return;
+        const point = touchPoint(event, gesture);
+        if (point) actions.current.tap(point.x, point.y);
+      },
+      onPanResponderTerminationRequest: () => false,
+    }),
+  ).current;
 
   const tiles = useMemo(() => {
     return occupied
       .slice()
-      .sort((a, b) => {
-        const A = toXY(a);
-        const B = toXY(b);
-        return A.x + A.y - (B.x + B.y);
-      })
+      .sort((a, b) => depth(a) - depth(b))
       .map((index) => {
         const tier = board[index]!;
-        const { x, y } = toXY(index);
-        const [cx, cy] = cellCenter(x, y, tw);
+        const [cx, cy] = screenCenter(index);
         return (
           <Tile
             key={`${index}-${tier}`}
             tier={tier}
             tw={tw}
+            tilt={tilt}
+            rotation={rotation}
             canvas={canvas}
             left={originX + cx - canvas.width / 2}
             top={originY + cy - canvas.groundY}
           />
         );
       });
-  }, [board, canvas, occupied, originX, originY, tw]);
+  }, [board, canvas, depth, occupied, originX, originY, rotation, screenCenter, tilt, tw]);
+
+  /** Im Abriss-Modus hervorgehobene Grundstücke – in Blickrichtung. */
+  const highlight = useMemo(() => {
+    if (!demolishMode) return undefined;
+    return occupied.map((index) => {
+      const { x, y } = toXY(index);
+      const turned = rotateCell(x, y, rotation, GRID);
+      return toIndex(turned.x, turned.y);
+    });
+  }, [demolishMode, occupied, rotation]);
 
   const flashPosition = useMemo(() => {
     if (!flash) return null;
-    const { x, y } = toXY(flash.index);
-    const [cx, cy] = cellCenter(x, y, tw);
+    const [cx, cy] = screenCenter(flash.index);
     return { left: originX + cx, top: originY + cy - tw * 1.1 };
-  }, [flash, originX, originY, tw]);
+  }, [flash, originX, originY, screenCenter, tw]);
 
   return (
     <View ref={containerRef} onLayout={measure} style={{ width: layout.width, height: layout.height }}>
-      <Plate layout={layout} highlight={demolishMode ? occupied : undefined} />
+      <Plate layout={layout} highlight={highlight} />
       {tiles}
       {flash && flashPosition ? (
         <FloatingScore points={flash.points} left={flashPosition.left} top={flashPosition.top} trigger={flash.key} />
       ) : null}
-      <Pressable style={StyleSheet.absoluteFill} onPress={handlePress} />
+      <View style={StyleSheet.absoluteFill} {...responder.panHandlers} />
+      <View style={styles.viewControls}>
+        <RotateButton direction={-1} onPress={() => onRotate(-1)} />
+        <RotateButton direction={1} onPress={() => onRotate(1)} />
+      </View>
     </View>
   );
 }
@@ -222,5 +371,21 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     fontSize: 16,
     fontWeight: '600',
+  },
+  viewControls: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  viewButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
