@@ -154,13 +154,21 @@ diese Fähigkeit kostet Leben. Ein normaler Zusammenstoß schubst bloß.
 | Fähigkeit | Wirkung |
 | --- | --- |
 | **Klinge** | Eine kreisende Klinge am Ball trifft, wen sie streift. |
-| **Stachel** | Lädt sich im eingestellten Takt auf; die nächste Berührung verletzt und verbraucht die Ladung. |
+| **Stachel** | Rammt bei jedem Wandtreffer einen Stachel in den Rand – genau dort, wo der Kämpfer aufgekommen ist. Die Stacheln bleiben die ganze Runde stehen und verletzen jeden Gegner, der hineinläuft. |
 | **Geschoss** | Feuert im Takt auf den nächsten Gegner; das Geschoss vergeht an der Wand. |
 | **Aura** | Pulst im Takt Schaden im Umkreis. |
 | **Schild** | Blockt eine Weile jeden Schaden und wirft die Hälfte an den Angreifer zurück. |
 
 Je Kämpfer einstellbar: Name, Fähigkeit, Leben, Schaden je Treffer, Takt der
-Fähigkeit, Farbe und ein eigenes Bild. Nach einem Treffer ist ein Ball kurz
+Fähigkeit, **Ballgröße**, Farbe und ein eigenes Bild. Die Größe wirkt sofort
+und bestimmt zugleich das Gewicht – ein großer Ball lässt sich schlechter
+schubsen.
+
+Der Takt steuert bei jeder Fähigkeit etwas anderes: beim Geschoss die
+Feuerrate, bei der Aura den Puls, beim Schild, wie oft es hochgeht, bei der
+Klinge ihre Umlaufzeit und beim Stachel den Mindestabstand zwischen zwei
+gesetzten Stacheln (frühestens nach dieser Zeit kommt der nächste). Stacheln
+setzen sich außerdem nicht doppelt an dieselbe Stelle, und bei 140 ist Schluss. Nach einem Treffer ist ein Ball kurz
 unverwundbar (0,3 s), damit eine kreisende Klinge nicht in einem Bild alles
 abräumt. Oben im Bild steht je Kämpfer ein Lebensbalken mit Name und
 Fähigkeit, über jedem Ball ein kleiner. Wer keine Leben mehr hat, verschwindet;
@@ -169,6 +177,13 @@ Sekunden an – der Schluss bleibt also im Video stehen.
 
 Im Kampf teilen sich Bälle nicht, und die Ball-Ball-Stöße werden mit
 eingeschaltet: Ohne sie könnten sich die Kämpfer nicht berühren.
+
+**Im Kampf spielt niemand Melodie.** Statt Noten gibt es Geräusche: ein
+dumpfer Schlag beim Aufprall, ein Kratzen bei Schaden, ein Pfeifen beim
+Geschoss, ein Wummern bei der Aura, ein Klirren beim Schild, ein Einschlag
+beim Stachel, ein Rauschen beim Ausscheiden und eine kleine Fanfare für den
+Sieger. Alles aus Rauschen und ein paar Oszillatoren gebaut, keine Dateien
+nötig – und alles landet über denselben Knoten in der Aufnahme.
 
 ## Eigene Ballbilder
 
@@ -251,7 +266,9 @@ nicht im Video landen.
   Kollision nichts ablenkt. Für den Kampf: dass ein Ball sein Bild behält und
   vererbt, dass zwei Kämpfer ohne angreifende Fähigkeit kein Leben verlieren,
   dass Klinge, Geschoss und Aura treffen und dass der Sieger richtig bestimmt
-  wird.
+  wird. Für den Stachel: dass er am Rand steckt, liegen bleibt, den eigenen
+  Kämpfer verschont, Gegner verletzt und beim Neustart verschwindet. Dazu,
+  dass jeder Kämpfer seine eigene Ballgröße bekommt.
 
   Alle Tests laufen mit festem Seed (4711) und setzen jeden Regler zurück –
   sonst hinge ihr Ergebnis am Test davor.

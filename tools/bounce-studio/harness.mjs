@@ -67,8 +67,9 @@ class FakeAudioContext {
   get currentTime() { return clock.t; }
   createGain() { return audioNode({ gain: param() }); }
   createOscillator() { return audioNode({ frequency: param(), type: 'sine' }); }
-  createBiquadFilter() { return audioNode({ frequency: param(), type: 'lowpass' }); }
+  createBiquadFilter() { return audioNode({ frequency: param(), Q: param(), type: 'lowpass' }); }
   createBufferSource() { return audioNode({ buffer: null }); }
+  createBuffer(kanaele, laenge) { return { getChannelData: () => new Float32Array(laenge), duration: laenge / 44100 }; }
   createMediaStreamDestination() { return { stream: { getAudioTracks: () => [] } }; }
   decodeAudioData() { return Promise.reject(new Error('im Test nicht nötig')); }
   resume() { this.state = 'running'; }

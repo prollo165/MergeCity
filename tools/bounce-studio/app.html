@@ -486,7 +486,7 @@
   const world = {
     kind: 'circle', R: 470, Rbase: 470, angle: 0, om: 0,
     verts: [], norms: [], inR: 470,
-    barriers: [], custom: [], balls: [], sparks: [], ripples: [], shots: [], spawn: null,
+    barriers: [], custom: [], balls: [], sparks: [], ripples: [], shots: [], spikes: [], spawn: null,
     winner: null, overAt: 0,
     hits: 0, time: 0, flash: 0, shake: 0, running: true,
     pulse: 0, beats: 0, beatT: 0,
@@ -687,7 +687,7 @@
      durch diese Fähigkeit tun weh – ein normaler Zusammenstoß schubst bloß. */
   const ABILITIES = {
     blade:  { name: 'Klinge',   info: 'Eine kreisende Klinge trifft, wen sie streift.' },
-    spike:  { name: 'Stachel',  info: 'Lädt sich auf; die nächste Berührung verletzt.' },
+    spike:  { name: 'Stachel',  info: 'Rammt bei jedem Wandtreffer einen Stachel in den Rand. Er bleibt die ganze Runde stehen und verletzt Gegner.' },
     shot:   { name: 'Geschoss', info: 'Feuert auf den nächsten Gegner.' },
     aura:   { name: 'Aura',     info: 'Pulst Schaden im Umkreis.' },
     shield: { name: 'Schild',   info: 'Blockt eine Weile und wirft die Hälfte zurück.' },
@@ -700,7 +700,7 @@
     fighters.push({
       name: 'Kämpfer ' + (i + 1),
       ability: FIGHT_START[i],
-      hp: 100, dmg: 10, rate: 1.2,
+      hp: 100, dmg: 10, rate: 1.2, size: 34,
       color: FIGHT_COLORS[i],
       src: null, look: null,
     });
@@ -728,12 +728,14 @@
     }
     v.hp -= menge;
     v.inv = 0.3;
+    sfx('dmg');
     world.flash = 1;
     if (P.shake) world.shake = Math.min(1, world.shake + 0.5);
     addSparks(v.x, v.y, '#ff6b6b');
     addSparks(v.x, v.y, colorOf(v));
     if (v.hp <= 0) {
       v.hp = 0;
+      sfx('death');
       for (let i = 0; i < 6; i++) addSparks(v.x, v.y, colorOf(v));
       const i = world.balls.indexOf(v);
       if (i >= 0) world.balls.splice(i, 1);
@@ -749,6 +751,50 @@
     };
   }
 
+  /** Nach innen zeigende Normale der Wand am Punkt (x, y). */
+  function wallNormalAt(x, y) {
+    if (world.kind === 'circle') {
+      const dx = CX - x, dy = CY - y;
+      const d = Math.hypot(dx, dy) || 1;
+      return { x: dx / d, y: dy / d };
+    }
+    const v = world.verts;
+    let best = Infinity, bi = 0;
+    for (let i = 0; i < v.length; i++) {
+      const q = closestOnSeg(x, y, v[i], v[(i + 1) % v.length]);
+      const d = (x - q.x) ** 2 + (y - q.y) ** 2;
+      if (d < best) { best = d; bi = i; }
+    }
+    return { x: -world.norms[bi].x, y: -world.norms[bi].y };
+  }
+
+  /** Ein Stachel bleibt stehen, wo sein Kämpfer die Wand getroffen hat. */
+  function plantSpike(b, f, x, y) {
+    if (world.spikes.length >= 140) return;
+    for (const sp of world.spikes) {
+      if (sp.fi === b.fi && (sp.x - x) ** 2 + (sp.y - y) ** 2 < 3600) return;   // steht schon einer
+    }
+    const n = wallNormalAt(x, y);
+    world.spikes.push({
+      x, y, nx: n.x, ny: n.y,
+      len: Math.max(34, b.r * 1.6), breit: Math.max(14, b.r * 0.5),
+      fi: b.fi, dmg: f.dmg, color: f.color, born: world.time,
+    });
+    sfx('spike');
+  }
+
+  function spikeHits() {
+    for (const sp of world.spikes) {
+      A.x = sp.x; A.y = sp.y;
+      Bp.x = sp.x + sp.nx * sp.len; Bp.y = sp.y + sp.ny * sp.len;
+      for (const v of world.balls) {
+        if (v.fi === sp.fi || v.hp <= 0 || v.inv > 0) continue;
+        const q = closestOnSeg(v.x, v.y, A, Bp);
+        if (Math.hypot(v.x - q.x, v.y - q.y) < v.r + 6) hurt(v, sp.dmg, null);
+      }
+    }
+  }
+
   function fireShot(b, f) {
     const ziel = nearestEnemy(b);
     if (!ziel) return;
@@ -759,23 +805,16 @@
       vx: (dx / d) * 1100, vy: (dy / d) * 1100,
       r: 10, fi: b.fi, dmg: f.dmg, life: 3, color: f.color,
     });
+    sfx('shot');
   }
 
   function pulseAura(b, f) {
     const R = b.r * 3.4;
     world.ripples.push({ x: b.x, y: b.y, life: 1, max: R, color: f.color });
+    sfx('aura');
     for (const v of world.balls) {
       if (v.fi === b.fi || v.hp <= 0) continue;
       if (Math.hypot(v.x - b.x, v.y - b.y) < R + v.r) hurt(v, f.dmg, b);
-    }
-  }
-
-  /** Der Stachel wirkt beim Zusammenstoß – dort, wo sich die Bälle berühren. */
-  function fightContact(a, b) {
-    if (!P.fight || a.fi === undefined || b.fi === undefined || a.fi === b.fi) return;
-    for (const [x, y] of [[a, b], [b, a]]) {
-      const f = fighters[x.fi];
-      if (f && f.ability === 'spike' && x.charged) { x.charged = false; hurt(y, f.dmg, x); }
     }
   }
 
@@ -788,11 +827,14 @@
       if (!f) continue;
       b.cd -= dt;
       if (b.cd <= 0) {
-        b.cd = Math.max(0.25, f.rate);
-        if (f.ability === 'spike') b.charged = true;
-        else if (f.ability === 'shield') b.shieldUntil = world.time + Math.min(1.4, f.rate * 0.6);
-        else if (f.ability === 'shot') fireShot(b, f);
-        else if (f.ability === 'aura') pulseAura(b, f);
+        if (f.ability === 'spike') {
+          b.cd = 0;                              // wartet auf den nächsten Wandtreffer
+        } else {
+          b.cd = Math.max(0.25, f.rate);
+          if (f.ability === 'shield') { b.shieldUntil = world.time + Math.min(1.4, f.rate * 0.6); sfx('shield'); }
+          else if (f.ability === 'shot') fireShot(b, f);
+          else if (f.ability === 'aura') pulseAura(b, f);
+        }
       }
       if (f.ability === 'blade') {
         const e = bladeEnds(b, f);
@@ -804,6 +846,8 @@
         }
       }
     }
+
+    spikeHits();
 
     const sh = world.shots;
     for (let i = sh.length - 1; i >= 0; i--) {
@@ -827,6 +871,7 @@
       if (leben.size <= 1) {
         world.winner = leben.size ? [...leben][0] : -1;
         world.overAt = world.time;
+        sfx('win');
       }
     }
   }
@@ -851,6 +896,7 @@
     world.hits = 0; world.time = 0; world.flash = 0; world.shake = 0; world.angle = 0;
     if (world.kind === 'poly') updateShape();
     world.shots.length = 0;
+    world.spikes.length = 0;
     world.winner = null;
     world.overAt = 0;
     if (P.fight) {
@@ -862,7 +908,7 @@
         const b = spawn(
           CX + Math.cos(w) * world.inR * 0.6, CY + Math.sin(w) * world.inR * 0.6,
           Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
-          Math.max(34, P.ballSize), i, rnd() * 360, i,   // im Kampf darf es größer sein
+          Math.max(12, f.size || 34), i, rnd() * 360, i,   // jeder Kämpfer hat seine Größe
         );
         b.fi = i;
         b.hpMax = Math.max(10, f.hp);
@@ -996,7 +1042,6 @@
     b.vx += (j * nx) / mb; b.vy += (j * ny) / mb;
 
     if (predicting) { predictHit = true; return; }
-    fightContact(a, b);
     // Beide wechseln die Farbe, geklungen wird aber nur einmal.
     b.hits++;
     if (P.colorMode === 'hit') b.ci++;
@@ -1432,6 +1477,13 @@
     if (P.shake) world.shake = Math.min(1, world.shake + 0.3);
     if (P.sparks) addSparks(x, y, colorOf(b));
     addRipple(x, y);
+    if (P.fight && kind === 'wall' && b.fi !== undefined) {
+      const f = fighters[b.fi];
+      if (f && f.ability === 'spike' && b.cd <= 0) {
+        plantSpike(b, f, x, y);
+        b.cd = Math.max(0.25, f.rate);
+      }
+    }
     if (P.warp && b === world.balls[0]) {
       // Nur der ausgewählte Aufschlag klingt – die Zwischenschläge nicht.
       if (warpCount > 0) warpCount--;
@@ -1735,6 +1787,21 @@
   }
 
   function drawFight() {
+    // Erst die gesetzten Stacheln – sie liegen hinter allem anderen.
+    for (const sp of world.spikes) {
+      const tx = sp.x + sp.nx * sp.len, ty = sp.y + sp.ny * sp.len;
+      const px = -sp.ny * sp.breit, py = sp.nx * sp.breit;
+      ctx.beginPath();
+      ctx.moveTo(sp.x + px, sp.y + py);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(sp.x - px, sp.y - py);
+      ctx.closePath();
+      ctx.fillStyle = sp.color;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,.55)';
+      ctx.stroke();
+    }
     ctx.lineCap = 'round';
     for (const b of world.balls) {
       const f = fighters[b.fi];
@@ -1746,14 +1813,14 @@
           ctx.moveTo(e.ax, e.ay); ctx.lineTo(e.bx, e.by);
           ctx.lineWidth = breite; ctx.strokeStyle = farbe; ctx.stroke();
         }
-      } else if (f.ability === 'spike' && b.charged) {
-        ctx.strokeStyle = f.color;
-        ctx.lineWidth = 6;
+      } else if (f.ability === 'spike') {
+        ctx.strokeStyle = withAlpha(f.color, b.cd <= 0 ? 0.95 : 0.35);
+        ctx.lineWidth = 5;
         ctx.beginPath();
-        for (let i = 0; i < 10; i++) {
-          const a = (i / 10) * TAU + world.time * 2;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU + world.time * 1.5;
           ctx.moveTo(b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r);
-          ctx.lineTo(b.x + Math.cos(a) * (b.r + 16), b.y + Math.sin(a) * (b.r + 16));
+          ctx.lineTo(b.x + Math.cos(a) * (b.r + 11), b.y + Math.sin(a) * (b.r + 11));
         }
         ctx.stroke();
       } else if (f.ability === 'shield' && b.shieldUntil > world.time) {
@@ -2194,7 +2261,9 @@
   }
   /** Ein Aufschlag rückt die Melodie um eine Note weiter und spielt sie. */
   function playNote(b, kind) {
-    if (!ac || ac.state !== 'running' || !mel.notes.length) return;
+    if (!ac || ac.state !== 'running') return;
+    if (P.fight) { sfx('hit'); return; }         // im Kampf gibt es keine Melodie
+    if (!mel.notes.length) return;
     const now = ac.currentTime;
     if (P.warp) {
       // Bei Zeitdehnung spielt allein der Taktgeber – er trifft ja auf der Note.
@@ -2215,6 +2284,92 @@
     g.gain.setValueAtTime(0.0001, now);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), now + atk);
     g.gain.exponentialRampToValueAtTime(0.0001, now + atk + dec);
+  }
+
+  /* --- Klänge im Kampf ---------------------------------------------------
+     Hier spielt niemand Melodie: Es scheppert, zischt und knallt. Alles wird
+     aus Rauschen und ein paar Oszillatoren gebaut, keine Dateien nötig. */
+  let noiseBuf = null, lastThunk = 0;
+
+  function noiseSource() {
+    if (!ac) return null;
+    if (!noiseBuf) {
+      const n = Math.floor(ac.sampleRate * 0.5);
+      noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const q = ac.createBufferSource();
+    q.buffer = noiseBuf;
+    return q;
+  }
+
+  /** Rauschstoß durch ein Filter – die Grundlage fast aller Kampfgeräusche. */
+  function knall(now, vol, typ, freq, dauer, q) {
+    const nz = noiseSource();
+    if (!nz) return;
+    const filt = ac.createBiquadFilter();
+    filt.type = typ;
+    filt.frequency.value = freq;
+    if (q && filt.Q) filt.Q.value = q;
+    const g = ac.createGain();
+    nz.connect(filt); filt.connect(g); g.connect(master);
+    env(g, now, vol, 0.001, dauer);
+    nz.start(now);
+    nz.stop(now + dauer + 0.05);
+  }
+
+  function ton(now, vol, typ, von, bis, dauer) {
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = typ;
+    o.frequency.setValueAtTime(von, now);
+    o.frequency.exponentialRampToValueAtTime(Math.max(20, bis), now + dauer);
+    o.connect(g); g.connect(master);
+    env(g, now, vol, 0.002, dauer);
+    o.start(now);
+    o.stop(now + dauer + 0.05);
+  }
+
+  function sfx(art, staerke) {
+    if (!ac || ac.state !== 'running') return;
+    const now = ac.currentTime;
+    const v = (P.volume / 100) * 0.3 * (songBereit() ? 0.55 : 1) * (staerke || 1);
+    if (v < 0.001) return;
+
+    if (art === 'hit') {
+      if (now - lastThunk < 0.025) return;       // sonst wird es ein Teppich
+      lastThunk = now;
+      ton(now, v * 0.5, 'sine', 190, 70, 0.09);
+      knall(now, v * 0.3, 'bandpass', 1400, 0.05, 1);
+    } else if (art === 'dmg') {
+      ton(now, v * 0.9, 'sawtooth', 420, 90, 0.16);
+      knall(now, v * 0.7, 'highpass', 900, 0.14);
+    } else if (art === 'shot') {
+      ton(now, v * 0.6, 'square', 950, 260, 0.1);
+    } else if (art === 'aura') {
+      ton(now, v * 0.8, 'sine', 110, 48, 0.42);
+      knall(now, v * 0.25, 'lowpass', 500, 0.3);
+    } else if (art === 'shield') {
+      ton(now, v * 0.45, 'triangle', 620, 1180, 0.22);
+    } else if (art === 'spike') {
+      ton(now, v * 0.55, 'square', 260, 130, 0.08);
+      knall(now, v * 0.5, 'highpass', 2200, 0.07);
+    } else if (art === 'death') {
+      knall(now, v, 'lowpass', 1600, 0.7);
+      ton(now, v * 0.8, 'sawtooth', 220, 35, 0.6);
+    } else if (art === 'win') {
+      [0, 4, 7, 12].forEach((halb, i) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.type = 'triangle';
+        o.frequency.value = 330 * Math.pow(2, halb / 12);
+        o.connect(g); g.connect(master);
+        env(g, now + i * 0.11, v * 0.55, 0.01, 0.5);
+        o.start(now + i * 0.11);
+        o.stop(now + i * 0.11 + 0.6);
+      });
+    }
   }
 
   function playTone(midi, now) {
@@ -2834,7 +2989,7 @@
       baelle: ballLooks.map((l) => l.src),
       kaempfer: fighters.map((f) => ({
         name: f.name, ability: f.ability, hp: f.hp, dmg: f.dmg, rate: f.rate,
-        color: f.color, src: f.src,
+        size: f.size, color: f.color, src: f.src,
       })),
       objekte: world.custom.map((o) => (o.t === 'img'
         ? { t: 'img', x: o.x, y: o.y, w: o.w, h: o.h, a: o.a, om: o.om, src: o.src, solid: o.solid !== false }
@@ -2912,6 +3067,7 @@
             f.hp = +roh.hp || f.hp;
             f.dmg = +roh.dmg || f.dmg;
             f.rate = +roh.rate || f.rate;
+            f.size = +roh.size || f.size;
             f.color = String(roh.color || f.color);
             f.src = roh.src || null;
             f.look = null;
@@ -3298,9 +3454,13 @@
       + '<input type="range" id="fDmg" class="wide" min="1" max="60" step="1"></div>'
       + '<div class="row"><label for="fRate">Takt der Fähigkeit</label><span class="val" id="fRateV"></span>'
       + '<input type="range" id="fRate" class="wide" min="0.3" max="3" step="0.1"></div>'
+      + '<div class="row"><label for="fSize">Ballgröße</label><span class="val" id="fSizeV"></span>'
+      + '<input type="range" id="fSize" class="wide" min="14" max="80" step="2"></div>'
       + '<div class="row"><label for="fColor">Farbe</label><input type="color" id="fColor"></div>'
       + '<label class="filebtn wide" id="fImgBtn">Bild für diesen Kämpfer<input type="file"></label>'
-      + '<div class="row"><span class="status" id="fImgHint"></span></div>';
+      + '<div class="row"><span class="status" id="fImgHint"></span></div>'
+      + '<div class="ed-actions" id="fImgDelWrap" hidden>'
+      + '<button type="button" class="btn" id="fImgDel">Bild entfernen</button></div>';
     return wrap;
   }
 
@@ -3337,10 +3497,13 @@
     el('fDmgV').textContent = f.dmg + ' HP';
     el('fRate').value = String(f.rate);
     el('fRateV').textContent = f.rate.toFixed(1).replace('.', ',') + ' s';
+    el('fSize').value = String(f.size);
+    el('fSizeV').textContent = f.size + ' px';
     el('fColor').value = f.color;
     const h = el('fImgHint');
     h.textContent = f.look ? 'Eigenes Bild gesetzt.' : 'Ohne Bild: einfarbige Kugel.';
     h.classList.toggle('on', !!f.look);
+    el('fImgDelWrap').hidden = !f.look;
   }
 
   function refreshFightUI() {
@@ -3365,6 +3528,19 @@
     el('fHp').addEventListener('input', (e) => { fighters[fSel].hp = +e.target.value; syncFight(); });
     el('fDmg').addEventListener('input', (e) => { fighters[fSel].dmg = +e.target.value; syncFight(); });
     el('fRate').addEventListener('input', (e) => { fighters[fSel].rate = +e.target.value; syncFight(); });
+    el('fSize').addEventListener('input', (e) => {
+      fighters[fSel].size = +e.target.value;
+      syncFight();
+      // Größe sofort sichtbar machen, ohne den Kampf neu zu starten.
+      for (const b of world.balls) if (b.fi === fSel) b.r = fighters[fSel].size;
+    });
+    el('fImgDel').addEventListener('click', () => {
+      const f = fighters[fSel];
+      f.src = null;
+      f.look = null;
+      for (const b of world.balls) if (b.fi === fSel) b.look = null;
+      syncFight();
+    });
     el('fColor').addEventListener('input', (e) => {
       fighters[fSel].color = e.target.value;
       buildFightTabs();

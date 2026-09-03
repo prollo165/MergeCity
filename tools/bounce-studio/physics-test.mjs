@@ -422,3 +422,49 @@ test('Geschosse und Aura treffen ebenfalls', () => {
   const ziel2 = world.balls.find((b) => b.fi === 1);
   assert.ok(ziel2 && ziel2.hp < ziel2.hpMax, 'die Aura hat nie gewirkt');
 });
+
+test('der Stachel bleibt am Rand stehen und verletzt nur Gegner', () => {
+  kampf({ ability: 'spike', dmg: 7, rate: 0.4 }, { ability: 'shield', rate: 9, hp: 400 },
+        { shape: 'circle', size: 0.86, gravity: 2200 });
+  laufen(engine, 400);
+  assert.ok(world.spikes.length > 0, 'kein Stachel gesetzt');
+  const zahl = world.spikes.length;
+
+  // Sie stecken in der Wand …
+  for (const sp of world.spikes) {
+    const d = Math.hypot(sp.x - 540, sp.y - 1000);
+    assert.ok(Math.abs(d - world.R) < 40, 'Stachel klebt nicht am Rand: ' + d.toFixed(0));
+    assert.equal(sp.fi, 0);
+  }
+  // … und bleiben liegen.
+  laufen(engine, 300);
+  assert.ok(world.spikes.length >= zahl, 'Stacheln sind verschwunden');
+
+  // Der eigene Kämpfer nimmt keinen Schaden von seinen Stacheln.
+  const eigen = world.balls.find((b) => b.fi === 0);
+  if (eigen) assert.equal(eigen.hp, eigen.hpMax, 'der Stachelträger hat sich selbst verletzt');
+
+  // Ein Gegner, der hineinläuft, schon.
+  const gegner = world.balls.find((b) => b.fi === 1);
+  if (gegner) {
+    const sp = world.spikes[0];
+    gegner.hp = gegner.hpMax;
+    gegner.inv = 0;
+    gegner.x = sp.x + sp.nx * sp.len * 0.5;
+    gegner.y = sp.y + sp.ny * sp.len * 0.5;
+    laufen(engine, 4);
+    assert.ok(gegner.hp < gegner.hpMax, 'der Gegner blieb im Stachel unverletzt');
+  }
+
+  // Ein Neustart räumt das Feld.
+  engine.reset();
+  assert.equal(world.spikes.length, 0, 'die Stacheln überleben den Neustart');
+});
+
+test('jeder Kämpfer bekommt seine eigene Ballgröße', () => {
+  kampf({ size: 22 }, { size: 60 });
+  const a = world.balls.find((b) => b.fi === 0);
+  const b = world.balls.find((b2) => b2.fi === 1);
+  assert.equal(a.r, 22);
+  assert.equal(b.r, 60);
+});
