@@ -24,8 +24,8 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | --- | --- |
 | **Form** | Kreis, Stern, Herz, Kapsel … samt Größe und Eigendrehung. Eine drehende Wand überträgt ihren Schwung auf den Ball. |
 | **Barrieren** | Ringe mit Lücke, Plinko-Pins, rotierende Balken, Kreuz-Spinner, Zickzack, kreisende Kugeln. |
-| **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, Ballgröße, Zeitlupe. |
-| **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
+| **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, Ballgröße, Zeitlupe – und ob die Bälle **voneinander abprallen**. |
+| **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren / **nur bei Ballkontakt**), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
 | **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
 | **Melodie** | Jeder Aufschlag rückt eine Note weiter – die Bälle spielen das Lied. Quelle: eingebaute Melodie, MIDI-Datei oder Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
@@ -151,7 +151,9 @@ Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 - `physics-test.mjs` – Prallverhalten, Vermehrung, „kein Ball verlässt die
   Form", Rückstellung nach der Vorhersage, die Trefferzeiten der Zeitdehnung
   und dass der Song nur bei Treffern und nie schneller als in Echtzeit
-  vorrückt.
+  vorrückt. Für die Ball-Ball-Stöße: dass sie zurückprallen, dass ohne die
+  Option nichts abgelenkt wird, dass auch im Gedränge kein Ball tief im
+  anderen steckt und dass der Auslöser „Nur bei Ballkontakt" greift.
 - `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
   gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
   Status, RIFF-Vorspann, unbekannte Chunks, Tempowechsel, Format 2,
@@ -175,7 +177,23 @@ npm run bounce:test      # Physik, Zeitdehnung und MIDI-Leser prüfen
   Rotierende Flächen geben ihre Oberflächengeschwindigkeit an den Ball weiter.
 - Bälle werden als vorgerenderte Sprites additiv gezeichnet – bei 300 Bällen
   wäre `shadowBlur` pro Bild zu teuer.
-- Bälle kollidieren **nicht** untereinander. Das ist Absicht: Im Original
-  durchdringen sie sich, und alles andere kostet bei 300 Bällen zu viel.
+- Bälle durchdringen sich standardmäßig, wie im Original. Mit **Bälle prallen
+  voneinander ab** stoßen sie sich stattdessen: Masse nach Fläche, Impuls nur
+  bei Annäherung, Entwirren gedämpft und gedeckelt. Statt jeder gegen jeden
+  läuft das über ein Raster – jeder Ball landet in einer Zelle, geprüft werden
+  nur die eigene und die acht angrenzenden, die Listen liegen in
+  wiederverwendeten `Int32Array`s. Gemessen ohne Zeichnen: 300 Bälle kosten
+  1,33 ms je Bild ohne und 1,46 ms mit Stößen, 500 Bälle 2,43 ms – bei
+  16,7 ms Budget.
+- Zwischen Bällen bleibt die Sprungkraft bei höchstens 1,00, auch wenn der
+  Regler höher steht: Über 1 schaukelt sich die Energie über hunderte Stöße
+  auf. An Wänden und Barrieren gilt weiter der eingestellte Wert.
+- Ein Ballkontakt ist ein vollwertiger Treffer: Beide Bälle wechseln die
+  Farbe, es funkt, und der Auslöser **Nur bei Ballkontakt** teilt genau dann.
+  Diesen Auslöser zu wählen schaltet die Stöße gleich mit an – ohne sie gäbe
+  es ihn nie.
+- Die Vorhersage für die Zeitdehnung rechnet nur den Taktgeber-Ball voraus,
+  kennt also keine künftigen Ballkontakte. Mit eingeschalteten Stößen und
+  vielen Bällen wird der Takt darum etwas ungenauer.
 - Aufgenommen wird mit `MediaRecorder` über `canvas.captureStream()`, der Ton
   über einen `MediaStreamDestination` – Bild und Klang landen in einer Datei.

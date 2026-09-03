@@ -351,7 +351,7 @@
   const P = {
     shape: 'circle', size: 0.86, spin: 0, wall: 14,
     barrier: 'rings', bCount: 3, bSpeed: 55,
-    gravity: 2400, bounce: 1.0, ballSize: 26, startSpeed: 850,
+    gravity: 2400, bounce: 1.0, ballSize: 26, startSpeed: 850, ballHit: false,
     slide: 1.0, tempo: 1,
     split: 'chance', splitChance: 18, maxBalls: 180, shrink: true, spread: 30,
     palette: 'neon', colorMode: 'hit', trail: 55, glow: true, sparks: true,
@@ -698,6 +698,86 @@
     stepEffects(dt);
   }
 
+  /* --- Bälle untereinander ------------------------------------------------
+     Bei dreihundert Bällen wäre jeder gegen jeden zu teuer, darum ein Raster:
+     Jeder Ball landet in einer Zelle, geprüft wird nur die eigene und die acht
+     angrenzenden. Die Listen liegen in wiederverwendeten Int32Arrays, damit
+     pro Substep nichts neu angelegt wird. */
+  let gridHead = null, gridNext = null;
+
+  function ballCollisions(balls) {
+    const n = balls.length;
+    if (n < 2) return;
+    let maxR = 0;
+    for (let i = 0; i < n; i++) if (balls[i].r > maxR) maxR = balls[i].r;
+    const cell = Math.max(24, maxR * 2);
+    const cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
+    const cells = cols * rows;
+
+    if (!gridHead || gridHead.length < cells) gridHead = new Int32Array(cells);
+    gridHead.fill(-1, 0, cells);
+    if (!gridNext || gridNext.length < n) gridNext = new Int32Array(n * 2);
+
+    const cellOf = (b) => {
+      const cx = Math.min(cols - 1, Math.max(0, ((b.x / cell) | 0) + 1));
+      const cy = Math.min(rows - 1, Math.max(0, ((b.y / cell) | 0) + 1));
+      return cy * cols + cx;
+    };
+    for (let i = 0; i < n; i++) {
+      const k = cellOf(balls[i]);
+      gridNext[i] = gridHead[k];
+      gridHead[k] = i;
+    }
+
+    // Zwischen Bällen bleibt die Sprungkraft bei höchstens 1: Über 1 würde
+    // sich die Energie über hunderte Stöße aufschaukeln.
+    const e = Math.min(1, P.bounce);
+    for (let i = 0; i < n; i++) {
+      const a = balls[i];
+      const cx = Math.min(cols - 1, Math.max(0, ((a.x / cell) | 0) + 1));
+      const cy = Math.min(rows - 1, Math.max(0, ((a.y / cell) | 0) + 1));
+      for (let oy = -1; oy <= 1; oy++) {
+        const y = cy + oy;
+        if (y < 0 || y >= rows) continue;
+        for (let ox = -1; ox <= 1; ox++) {
+          const x = cx + ox;
+          if (x < 0 || x >= cols) continue;
+          for (let j = gridHead[y * cols + x]; j !== -1; j = gridNext[j]) {
+            if (j <= i) continue;
+            resolvePair(a, balls[j], e);
+          }
+        }
+      }
+    }
+  }
+
+  function resolvePair(a, b, e) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const rr = a.r + b.r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= rr * rr || d2 < 1e-9) return;
+    const d = Math.sqrt(d2);
+    const nx = dx / d, ny = dy / d;
+
+    // Masse nach Fläche: große Bälle lassen sich weniger schubsen.
+    const ma = a.r * a.r, mb = b.r * b.r, ms = ma + mb;
+    const raus = Math.min(rr - d, rr * 0.5) * 0.5;   // gemächlich entwirren
+    a.x -= nx * raus * (mb / ms); a.y -= ny * raus * (mb / ms);
+    b.x += nx * raus * (ma / ms); b.y += ny * raus * (ma / ms);
+
+    const rvn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (rvn >= 0) return;                            // entfernen sich schon
+    const j = (-(1 + e) * rvn) / (1 / ma + 1 / mb);
+    a.vx -= (j * nx) / ma; a.vy -= (j * ny) / ma;
+    b.vx += (j * nx) / mb; b.vy += (j * ny) / mb;
+
+    if (predicting) { predictHit = true; return; }
+    // Beide wechseln die Farbe, geklungen wird aber nur einmal.
+    b.hits++;
+    if (P.colorMode === 'hit') b.ci++;
+    onHit(a, a.x + nx * a.r, a.y + ny * a.r, 'ball');
+  }
+
   /** Nur Bewegung und Stöße – ohne Effekte und Uhr, damit die Vorhersage für
       die Zeitdehnung denselben Code benutzen kann. */
   function substepPhysics(dt, balls) {
@@ -711,6 +791,9 @@
       updateShape();
     }
     updateBarriers(dt);
+    // Erst die Bälle entwirren, dann bewegen: So holt die Wandprüfung im
+    // selben Schritt zurück, was ein Stoß nach außen geschoben hat.
+    if (P.ballHit) ballCollisions(balls);
     const g = P.gravity;
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
@@ -938,6 +1021,7 @@
     if (P.split === 'off' || b.cool > 0) return;
     if (world.balls.length >= P.maxBalls) return;
     if (P.split === 'barrier' && kind !== 'barrier') return;
+    if (P.split === 'ball' && kind !== 'ball') return;
     if (P.split !== 'always' && rnd() * 100 >= P.splitChance) return;
     doSplit(b);
   }
@@ -953,7 +1037,8 @@
     b.vx = Math.cos(ang - half) * sp;
     b.vy = Math.sin(ang - half) * sp;
 
-    const c = spawn(b.x, b.y, Math.cos(ang + half) * sp, Math.sin(ang + half) * sp,
+    const c = spawn(b.x - Math.sin(ang) * nr * 0.9, b.y + Math.cos(ang) * nr * 0.9,
+                    Math.cos(ang + half) * sp, Math.sin(ang + half) * sp,
                     nr, P.colorMode === 'hit' ? b.ci : b.ci + 1, (b.hue + 37) % 360);
     c.cool = 0.06;
     c.hits = b.hits;
@@ -1891,6 +1976,7 @@
         rng('startSpeed', 'Anstoß', 200, 2000, 50, (v) => v + ' px/s'),
         rng('ballSize', 'Ballgröße', 8, 48, 1, px),
         rng('slide', 'Gleiten', 0.9, 1, 0.005, (v) => v.toFixed(3).replace('.', ',')),
+        tog('ballHit', 'Bälle prallen voneinander ab'),
         rng('tempo', 'Zeitlupe / Tempo', 0.25, 1.5, 0.05, (v) => v.toFixed(2).replace('.', ',') + '×'),
       ],
     },
@@ -1900,7 +1986,11 @@
         sel('split', 'Auslöser', [
           ['off', 'Aus'], ['chance', 'Zufall bei Treffer'],
           ['always', 'Jeder Treffer'], ['barrier', 'Nur an Barrieren'],
-        ]),
+          ['ball', 'Nur bei Ballkontakt'],
+        ], () => {
+          // Ohne Ball-Ball-Stöße gäbe es diesen Auslöser nie – also gleich an.
+          if (P.split === 'ball' && !P.ballHit) { P.ballHit = true; controls.ballHit(); }
+        }),
         rng('splitChance', 'Wahrscheinlichkeit', 1, 100, 1, (v) => v + ' %'),
         rng('maxBalls', 'Obergrenze', 1, 500, 1, (v) => v + ' Bälle'),
         rng('spread', 'Streuwinkel', 0, 120, 2, (v) => v + ' °'),

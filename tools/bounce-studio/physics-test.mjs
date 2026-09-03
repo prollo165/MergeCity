@@ -139,3 +139,58 @@ test('der Song rückt nur bei Treffern schnipselweise vor', () => {
   const schnipsel = (engine.songPos - vorher.pos) / P.burstLen;
   assert.ok(schnipsel <= world.hits - vorher.treffer, 'mehr Schnipsel als Treffer');
 });
+
+/** Ball von Hand setzen – so wie spawn() ihn baut. */
+const ball = (x, y, vx, vy, r = 26) => ({ x, y, vx, vy, r, ci: 0, hue: 0, hits: 0, cool: 0 });
+
+test('Bälle prallen voneinander ab', () => {
+  stelle({ barrier: 'none', gravity: 0, split: 'off', ballHit: true, bounce: 1 });
+  world.balls.length = 0;
+  world.balls.push(ball(400, 1000, 300, 0), ball(700, 1000, -300, 0));
+  laufen(engine, 40);
+
+  const [a, b] = world.balls;
+  assert.equal(world.balls.length, 2, 'Teilung war aus');
+  assert.ok(a.vx < 0, 'linker Ball fliegt nicht zurück: ' + a.vx.toFixed(0));
+  assert.ok(b.vx > 0, 'rechter Ball fliegt nicht zurück: ' + b.vx.toFixed(0));
+  assert.ok(Math.hypot(b.x - a.x, b.y - a.y) > a.r + b.r - 1, 'Bälle stecken ineinander');
+  assert.ok(world.hits > 0, 'der Stoß zählte nicht als Treffer');
+});
+
+test('ohne die Option gehen Bälle weiter durcheinander hindurch', () => {
+  stelle({ barrier: 'none', gravity: 0, split: 'off', ballHit: false });
+  world.balls.length = 0;
+  world.balls.push(ball(400, 1000, 300, 0), ball(700, 1000, -300, 0));
+  laufen(engine, 40);
+  assert.ok(world.balls[0].vx > 0, 'der Ball wurde abgelenkt, obwohl die Option aus ist');
+});
+
+test('auch im Gedränge steckt kein Ball tief im anderen', () => {
+  stelle({ ballHit: true, split: 'chance', splitChance: 30, maxBalls: 120, ballSize: 24 });
+  laufen(engine, 700);
+  const bs = world.balls;
+  assert.ok(bs.length > 20, 'zu wenige Bälle für die Probe: ' + bs.length);
+  let schlimmste = 0;
+  for (let i = 0; i < bs.length; i++) {
+    for (let j = i + 1; j < bs.length; j++) {
+      const d = Math.hypot(bs[j].x - bs[i].x, bs[j].y - bs[i].y);
+      const u = bs[i].r + bs[j].r - d;
+      if (u > schlimmste) schlimmste = u;
+    }
+  }
+  const kleinster = Math.min(...bs.map((b) => b.r));
+  assert.ok(schlimmste < kleinster, 'Überlappung von ' + schlimmste.toFixed(1) + 'px bei Radius ' + kleinster.toFixed(1));
+});
+
+test('Teilung bei Ballkontakt', () => {
+  stelle({ barrier: 'none', gravity: 0, split: 'ball', splitChance: 100, ballHit: true, maxBalls: 40 });
+  world.balls.length = 0;
+  world.balls.push(ball(400, 1000, 300, 0), ball(700, 1000, -300, 0));
+  laufen(engine, 200);
+  assert.ok(world.balls.length > 2, 'Ballkontakt hat nichts geteilt');
+
+  // Ohne Ball-Ball-Stöße gibt es diesen Auslöser nicht – dann teilt sich nichts.
+  stelle({ barrier: 'none', split: 'ball', splitChance: 100, ballHit: false, maxBalls: 40 });
+  laufen(engine, 300);
+  assert.equal(world.balls.length, 1, 'ohne Ballkontakt wurde trotzdem geteilt');
+});
