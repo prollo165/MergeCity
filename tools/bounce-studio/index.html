@@ -99,7 +99,7 @@
   .stage {
     /* Die Bühne wird von der Höhe her gedacht – ein 9:16-Bild soll ganz
        ins Fenster passen, die Blende folgt dieser Breite. */
-    --screen-w: calc(min(76vh, 860px) * 9 / 16);
+    --screen-w: calc(min(64vh, 720px) * 9 / 16);
     display: flex; flex-direction: column; gap: 12px; align-items: center;
   }
   @media (max-width: 1000px) { .stage { --screen-w: min(420px, 100%); } }
@@ -148,15 +148,31 @@
   }
   .readout dd {
     margin: 1px 0 0; font-family: var(--font-mono); font-size: 15px;
-    font-variant-numeric: tabular-nums; color: var(--silk);
+    font-variant-numeric: tabular-nums; color: var(--silk); white-space: nowrap;
   }
   .readout dd.acc { color: var(--signal); }
 
   .transport { display: flex; gap: 8px; flex-wrap: wrap; width: var(--screen-w); max-width: 100%; }
   .transport .grow { flex: 1 1 auto; }
 
-  /* ---------- Bedienschiene ---------- */
+  /* ---------- Bedienschiene ----------
+     Die Schiene scrollt in sich selbst, damit das Bild beim Schrauben an den
+     unteren Modulen stehen bleibt. */
   .rail { border: 1px solid var(--rule); border-radius: 10px; background: var(--chassis); }
+  @media (min-width: 1001px) {
+    .stage, .rail { position: sticky; top: 14px; }
+    .rail {
+      max-height: calc(100vh - 28px); overflow-y: auto; overscroll-behavior: contain;
+      scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
+    }
+    .rail::-webkit-scrollbar { width: 10px; }
+    .rail::-webkit-scrollbar-track { background: transparent; }
+    .rail::-webkit-scrollbar-thumb {
+      background: var(--rule); border-radius: 6px;
+      border: 3px solid var(--chassis);
+    }
+    .rail::-webkit-scrollbar-thumb:hover { background: var(--dimmer); }
+  }
   .mod { padding: 13px 15px 15px; border-top: 1px solid var(--rule-soft); }
   .mod:first-child { border-top: 0; }
   .mod > h2 {
@@ -228,6 +244,25 @@
   .btn.rec:hover:not(:disabled) { background: #ef5a5f; border-color: #ef5a5f; }
 
   :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  .mod.muted .row + .row { opacity: .42; }
+
+  .filebtn {
+    display: block; text-align: center; cursor: pointer;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; padding: 9px 13px; border-radius: 6px;
+    border: 1px dashed var(--rule); background: var(--raised); color: var(--silk);
+    transition: border-color .12s, background .12s;
+  }
+  .filebtn:hover { border-color: var(--signal); background: var(--raised-hi); }
+  .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .filebtn:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  .status {
+    grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10.5px;
+    line-height: 1.45; color: var(--dim); word-break: break-word;
+  }
+  .status.on { color: var(--signal); }
 
   .export-out {
     margin-top: 10px; padding: 10px 11px; border: 1px solid var(--rule);
@@ -337,6 +372,8 @@
     shake: true, bg: 'studio',
     hud: true, hudTitle: 'WIE VIELE WERDEN ES?', target: 180,
     sound: true, scale: 'penta', volume: 45,
+    rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
+    beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
     outRes: 720, bitrate: 4, recLimit: 15,
   };
 
@@ -430,15 +467,18 @@
 
   /* ---------------------------------------------------------------- Welt */
   const world = {
-    kind: 'circle', R: 470, angle: 0, om: 0,
+    kind: 'circle', R: 470, Rbase: 470, angle: 0, om: 0,
     verts: [], norms: [], inR: 470,
     barriers: [], balls: [], sparks: [], ripples: [],
     hits: 0, time: 0, flash: 0, shake: 0, running: true,
+    pulse: 0, beats: 0, beatT: 0,
   };
 
   function buildShape() {
     const def = SHAPES[P.shape] || SHAPES.circle;
-    world.R = 0.5 * W * P.size;
+    world.Rbase = 0.5 * W * P.size;
+    world.R = world.Rbase;
+    world.pulse = 0;
     world.om = (P.spin * Math.PI) / 180;
     world.kind = def.unit ? 'poly' : 'circle';
     world.unit = def.unit;
@@ -641,6 +681,13 @@
       Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
       P.ballSize, 0, rnd() * 360,
     ));
+    lastBeat = null;
+    world.beats = 0;
+    if (P.rhythm === 'song' && song.buffer) {
+      stopSong();
+      songPos = P.songStart;
+      if (world.running) startSong(songPos);
+    }
     paintBackground();
     updateReadout();
   }
@@ -650,7 +697,15 @@
   const MAXV = 4200;
 
   function substep(dt) {
-    if (world.om) { world.angle += world.om * dt; updateShape(); }
+    // Der Taktpuls weitet die Wand kurz – die Kollision nutzt denselben Radius,
+    // die Form atmet also wirklich, statt nur heller zu leuchten.
+    if (world.pulse > 0) world.pulse = Math.max(0, world.pulse - dt * 3.6);
+    const R = world.Rbase * (1 + 0.045 * world.pulse);
+    if (world.om || Math.abs(R - world.R) > 0.05) {
+      world.angle += world.om * dt;
+      world.R = R;
+      updateShape();
+    }
     updateBarriers(dt);
     const balls = world.balls, g = P.gravity;
     for (let i = 0; i < balls.length; i++) {
@@ -794,6 +849,21 @@
     addRipple(x, y);
     playNote(b);
     maybeSplit(b, kind);
+    if (P.beatLock) lockToBeat(b);
+  }
+
+  /* Regelt die Ballgeschwindigkeit sanft nach, bis die Aufschläge auf dem
+     Taktraster landen: zu spät -> etwas schneller, zu früh -> etwas langsamer. */
+  function lockToBeat(b) {
+    const bi = beatInfo();
+    if (!bi) return;
+    let err = (((world.beatT - bi.ph) % bi.per) + bi.per) % bi.per;
+    if (err > bi.per / 2) err -= bi.per;
+    const f = Math.max(0.87, Math.min(1.15, 1 + (err / bi.per) * 0.5));
+    const sp = Math.hypot(b.vx, b.vy) || 1;
+    const ns = Math.max(P.startSpeed * 0.35, Math.min(P.startSpeed * 2.6, sp * f));
+    const k = ns / sp;
+    b.vx *= k; b.vy *= k;
   }
 
   function maybeSplit(b, kind) {
@@ -801,7 +871,10 @@
     if (world.balls.length >= P.maxBalls) return;
     if (P.split === 'barrier' && kind !== 'barrier') return;
     if (P.split !== 'always' && rnd() * 100 >= P.splitChance) return;
+    doSplit(b);
+  }
 
+  function doSplit(b) {
     const sp = Math.hypot(b.vx, b.vy) || P.startSpeed;
     const ang = Math.atan2(b.vy, b.vx);
     const half = ((P.spread * Math.PI) / 180) / 2;
@@ -1082,12 +1155,189 @@
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = P.scale === 'blip' ? 'square' : 'triangle';
     o.frequency.value = 196 * Math.pow(2, semi / 12);
-    const vol = (P.volume / 100) * 0.16;
+    const vol = (P.volume / 100) * 0.16 * (song.src ? 0.45 : 1);
     g.gain.setValueAtTime(0.0001, now);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), now + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
     o.connect(g); g.connect(master);
     o.start(now); o.stop(now + 0.3);
+  }
+
+  /* ---------------------------------------------------------------- Rhythmus
+     Zwei Taktquellen: ein reiner BPM-Taktgeber oder eine geladene Audiodatei.
+     Die Datei wird im Browser decodiert und analysiert und verlässt das Gerät
+     nicht. Streaming-Links (Spotify, Apple Music, YouTube) lassen sich dagegen
+     nicht anzapfen: Deren Ton ist DRM-geschützt und für Seitencode weder les-
+     noch analysierbar. Darum Datei oder BPM. */
+  const song = {
+    buffer: null, name: '', period: 0, phase: 0, bpm: 0,
+    src: null, gain: null, startedAt: 0,
+  };
+  let songPos = 0, lastBeat = null, taps = [];
+
+  const fmtClock = (sec) =>
+    Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
+
+  function beatInfo() {
+    if (P.rhythm === 'off') return null;
+    if (P.rhythm === 'song' && song.buffer && song.period > 0) {
+      return { per: song.period, ph: song.phase, t: songTime() };
+    }
+    return { per: 60 / Math.max(30, P.bpm), ph: 0, t: world.time };
+  }
+
+  function songTime() {
+    return song.src && ac ? ac.currentTime - song.startedAt : songPos;
+  }
+
+  function startSong(offset) {
+    if (!ac || !song.buffer) return;
+    stopSong();
+    const src = ac.createBufferSource();
+    const g = ac.createGain();
+    g.gain.value = P.songVol / 100;
+    src.buffer = song.buffer;
+    src.connect(g);
+    g.connect(master);
+    const when = ac.currentTime + 0.04;
+    const off = Math.max(0, Math.min(offset, song.buffer.duration - 0.05));
+    src.start(when, off);
+    src.onended = () => { if (song.src === src) song.src = null; };
+    song.src = src; song.gain = g; song.startedAt = when - off;
+  }
+
+  function stopSong() {
+    if (!song.src) return;
+    songPos = songTime();
+    try { song.src.stop(); } catch (e) { /* war schon zu Ende */ }
+    song.src = null;
+  }
+
+  function onBeat() {
+    world.beats++;
+    if (P.beatPulse) { world.pulse = 1; world.flash = Math.max(world.flash, 0.7); }
+    if (P.beatColor && P.colorMode !== 'flow') for (const b of world.balls) b.ci++;
+    if (P.beatSpin) {
+      for (const o of world.barriers) {
+        if (!o.om) continue;
+        const st = 0.32 * Math.sign(o.om);
+        if (o.orbitR !== undefined) o.phase += st; else o.a += st;
+      }
+      updateBarriers(0);
+    }
+    if (P.beatSplit && world.balls.length && world.balls.length < P.maxBalls) {
+      doSplit(world.balls[(Math.random() * world.balls.length) | 0]);
+    }
+  }
+
+  /** Prüft je Bild, ob seit dem letzten Bild eine Zählzeit überschritten wurde. */
+  function pumpBeats() {
+    const bi = beatInfo();
+    if (!bi) { lastBeat = null; return; }
+    world.beatT = bi.t;
+    const idx = Math.floor((bi.t - bi.ph) / bi.per);
+    if (lastBeat === null) { lastBeat = idx; return; }
+    if (idx > lastBeat) {
+      if (idx - lastBeat <= 4) onBeat();   // nach einer Pause nicht nachfeuern
+      lastBeat = idx;
+    }
+  }
+
+  /** Taktschätzung: Bassenergie -> Anstiegsfluss -> Autokorrelation für die
+      Periode -> Phasensuche für die Eins. Reicht für alles mit klarer Bassdrum. */
+  function analyse(buf) {
+    const sr = buf.sampleRate, HOP = 512;
+    const a = buf.getChannelData(0);
+    const b = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
+    const frames = Math.floor(a.length / HOP);
+    if (frames < 200) return null;
+
+    const env = new Float32Array(frames);
+    const k = Math.exp((-2 * Math.PI * 160) / sr);      // Einpol-Tiefpass ~160 Hz
+    let lp = 0, i = 0;
+    for (let f = 0; f < frames; f++) {
+      let sum = 0;
+      for (let n = 0; n < HOP; n++, i++) {
+        const x = b ? (a[i] + b[i]) * 0.5 : a[i];
+        lp = x * (1 - k) + lp * k;
+        sum += lp * lp;
+      }
+      env[f] = Math.sqrt(sum / HOP);
+    }
+    const flux = new Float32Array(frames);
+    for (let f = 1; f < frames; f++) flux[f] = Math.max(0, env[f] - env[f - 1]);
+
+    const fps = sr / HOP;
+    const minLag = Math.max(2, Math.round((fps * 60) / 190));
+    const maxLag = Math.round((fps * 60) / 60);
+    let bestLag = minLag, best = -1;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let sum = 0;
+      for (let f = lag; f < frames; f++) sum += flux[f] * flux[f - lag];
+      sum /= frames - lag;
+      const bpm = (60 * fps) / lag;
+      sum *= 1 - Math.min(1, Math.abs(Math.log(bpm / 120)) / 1.2) * 0.35;
+      if (sum > best) { best = sum; bestLag = lag; }
+    }
+    let phase = 0, bestSum = -1;
+    for (let p = 0; p < bestLag; p++) {
+      let sum = 0;
+      for (let f = p; f < frames; f += bestLag) sum += flux[f];
+      if (sum > bestSum) { bestSum = sum; phase = p; }
+    }
+    return { period: bestLag / fps, phase: phase / fps, bpm: (60 * fps) / bestLag };
+  }
+
+  function songStatus(text, on) {
+    const n = el('songStatus');
+    if (!n) return;
+    n.textContent = text;
+    n.classList.toggle('on', !!on);
+  }
+
+  async function loadSong(file) {
+    if (!file) return;
+    audioResume();
+    if (!ac) { songStatus('Dieser Browser kann keine Audiodateien abspielen.'); return; }
+    songStatus('Lese ' + file.name + ' …');
+    try {
+      const raw = await file.arrayBuffer();
+      const audio = await ac.decodeAudioData(raw);
+      songStatus('Analysiere den Takt …');
+      await new Promise((r) => setTimeout(r, 30));
+      const res = analyse(audio);
+      if (!res) { songStatus('Die Datei ist zu kurz für eine Taktanalyse.'); return; }
+      song.buffer = audio; song.name = file.name;
+      song.period = res.period; song.phase = res.phase; song.bpm = res.bpm;
+      P.rhythm = 'song';
+      P.bpm = Math.max(60, Math.min(200, Math.round(res.bpm)));
+      controls.rhythm(); controls.bpm();
+      refreshRhythm();
+      songStatus(file.name + ' · ' + Math.round(res.bpm) + ' BPM · ' + fmtClock(audio.duration), true);
+      reset();
+    } catch (e) {
+      songStatus('Diese Datei ließ sich nicht lesen. MP3, M4A, WAV oder OGG gehen.');
+    }
+  }
+
+  function tapTempo() {
+    const now = performance.now();
+    if (taps.length && now - taps[taps.length - 1] > 2200) taps = [];
+    taps.push(now);
+    if (taps.length > 5) taps.shift();
+    if (taps.length < 2) { songStatus('Weiter tippen …'); return; }
+    const span = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    P.bpm = Math.max(60, Math.min(200, Math.round(60000 / span)));
+    if (P.rhythm === 'off') { P.rhythm = 'bpm'; controls.rhythm(); }
+    controls.bpm();
+    refreshRhythm();
+    lastBeat = null;
+    songStatus('Getippt: ' + P.bpm + ' BPM', true);
+  }
+
+  function refreshRhythm() {
+    const m = el('rhythmMod');
+    if (m) m.classList.toggle('muted', P.rhythm === 'off');
   }
 
   /* ---------------------------------------------------------------- Aufnahme */
@@ -1115,8 +1365,7 @@
     if (!type) { exportMsg('Kein unterstütztes Videoformat gefunden.', true); return; }
 
     reset();                        // eine Aufnahme beginnt immer sauber von vorn
-    world.running = true;
-    syncPlay();
+    setRunning(true);
 
     const tracks = canvas.captureStream(60).getVideoTracks();
     if (P.sound && recDest) tracks.push(...recDest.stream.getAudioTracks());
@@ -1287,6 +1536,32 @@
       ],
     },
     {
+      title: 'Rhythmus', hint: 'Takt', id: 'rhythmMod',
+      rows: [
+        sel('rhythm', 'Taktquelle', [
+          ['off', 'Aus'], ['bpm', 'Taktgeber (BPM)'], ['song', 'Audiodatei'],
+        ], () => {
+          refreshRhythm();
+          lastBeat = null;
+          if (P.rhythm !== 'song') stopSong();
+          else if (song.buffer && world.running) startSong(songPos);
+        }),
+        rng('bpm', 'Tempo', 60, 200, 1, (v) => v + ' BPM', () => { lastBeat = null; }),
+        { kind: 'custom', build: tapRow },
+        { kind: 'custom', build: fileRow },
+        { kind: 'custom', build: statusRow },
+        rng('songStart', 'Startpunkt im Song', 0, 240, 1, fmtClock, () => { songPos = P.songStart; }),
+        rng('songVol', 'Musiklautstärke', 0, 100, 1, (v) => v + ' %', () => {
+          if (song.gain) song.gain.gain.value = P.songVol / 100;
+        }),
+        tog('beatPulse', 'Form pulsiert'),
+        tog('beatColor', 'Farbe auf Beat'),
+        tog('beatSplit', 'Teilung auf Beat'),
+        tog('beatSpin', 'Barrieren im Takt'),
+        tog('beatLock', 'Bälle springen im Takt'),
+      ],
+    },
+    {
       title: 'Export', hint: '9:16', id: 'resGroup',
       rows: [
         sel('outRes', 'Auflösung', [
@@ -1317,6 +1592,47 @@
 
   const controls = {};
 
+  function tapRow() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lab = document.createElement('label');
+    lab.textContent = 'Tempo antippen';
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.type = 'button';
+    btn.textContent = 'Tap';
+    btn.addEventListener('click', tapTempo);
+    row.appendChild(lab);
+    row.appendChild(btn);
+    return row;
+  }
+
+  function fileRow() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const l = document.createElement('label');
+    l.className = 'filebtn wide';
+    l.textContent = 'Song laden · MP3 M4A WAV';
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = 'audio/*';
+    i.addEventListener('change', () => { loadSong(i.files && i.files[0]); i.value = ''; });
+    l.appendChild(i);
+    row.appendChild(l);
+    return row;
+  }
+
+  function statusRow() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const n = document.createElement('span');
+    n.className = 'status';
+    n.id = 'songStatus';
+    n.textContent = 'Streaming-Links (Spotify & Co.) lassen sich nicht auslesen – ihr Ton ist geschützt. Lade die Datei oder tippe das Tempo ein.';
+    row.appendChild(n);
+    return row;
+  }
+
   function buildRail() {
     const rail = el('rail');
     for (const mod of MODULES) {
@@ -1337,6 +1653,7 @@
   }
 
   function buildRow(cfg) {
+    if (cfg.kind === 'custom') return cfg.build();
     const row = document.createElement('div');
     row.className = 'row';
     const id = 'c_' + cfg.key;
@@ -1461,8 +1778,7 @@
     }
     paintBackground();
     reset();
-    world.running = true;
-    syncPlay();
+    setRunning(true);
   }
 
   /* ---------------------------------------------------------------- Anzeige */
@@ -1474,8 +1790,26 @@
     el('mFps').textContent = String(Math.round(fps));
     el('mSeed').textContent = String(seed).padStart(4, '0');
   }
+  /* Die Schiene bekommt genau die Höhe, die unter dem Kopf frei ist – so ist
+     sie auch ungescrollt vollständig sichtbar und scrollt nur in sich selbst. */
+  function fitRail() {
+    const rail = el('rail');
+    if (window.innerWidth <= 1000) { rail.style.maxHeight = ''; return; }
+    const top = rail.getBoundingClientRect().top + window.scrollY;
+    rail.style.maxHeight = Math.max(360, window.innerHeight - top - 20) + 'px';
+  }
+
   function syncPlay() {
     el('btnPlay').textContent = world.running ? 'Pause' : 'Start';
+  }
+  /** Start/Pause zieht die Musik mit – sonst läuft der Song ohne Bild weiter. */
+  function setRunning(v) {
+    const was = world.running;
+    world.running = v;
+    if (P.rhythm === 'song' && song.buffer && was !== v) {
+      if (v) startSong(songPos); else stopSong();
+    }
+    syncPlay();
   }
   function exportMsg(text, warn, withSave) {
     const box = el('exportOut');
@@ -1492,6 +1826,7 @@
     const real = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (real > 0.0005) fps += (1 / real - fps) * 0.06;
+    pumpBeats();
 
     if (world.running) {
       acc += real * P.tempo;
@@ -1520,13 +1855,12 @@
   setRes(P.outRes);
   reset();
 
-  el('btnPlay').addEventListener('click', () => { world.running = !world.running; syncPlay(); });
-  el('btnReset').addEventListener('click', () => { reset(); world.running = true; syncPlay(); });
+  el('btnPlay').addEventListener('click', () => setRunning(!world.running));
+  el('btnReset').addEventListener('click', () => { reset(); setRunning(true); });
   el('btnSeed').addEventListener('click', () => {
     seed = Math.floor(Math.random() * 9000) + 1000;
     reset();
-    world.running = true;
-    syncPlay();
+    setRunning(true);
   });
   el('btnRec').addEventListener('click', () => (recording ? stopRec() : startRec()));
   el('btnSave').addEventListener('click', saveRec);
@@ -1534,17 +1868,21 @@
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-    if (e.code === 'Space') { e.preventDefault(); world.running = !world.running; syncPlay(); }
-    else if (e.key === 'r' || e.key === 'R') { reset(); world.running = true; syncPlay(); }
+    if (e.code === 'Space') { e.preventDefault(); setRunning(!world.running); }
+    else if (e.key === 'r' || e.key === 'R') { reset(); setRunning(true); }
     else if (e.key === 'n' || e.key === 'N') { seed = Math.floor(Math.random() * 9000) + 1000; reset(); }
   });
 
   // Ton darf erst nach einer Nutzeraktion starten.
+  fitRail();
+  window.addEventListener('resize', fitRail);
+
   document.addEventListener('pointerdown', audioResume, { once: true });
   document.addEventListener('keydown', audioResume, { once: true });
 
   seed = Math.floor(Math.random() * 9000) + 1000;
   reset();
+  refreshRhythm();
   syncPlay();
   requestAnimationFrame(frame);
 })();

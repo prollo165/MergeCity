@@ -29,9 +29,38 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
 | **Ton** | Jeder Treffer spielt die nächste Note einer Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
+| **Rhythmus** | Taktquelle wählen (BPM-Taktgeber oder Audiodatei), dann pulsiert die Form, wechselt die Farbe, teilen sich Bälle oder springen im Takt. |
 | **Export** | Auflösung, Bitrate, Länge. `Aufnahme` startet den Lauf neu und stoppt automatisch. |
 
 Tasten: `Leertaste` Start/Pause, `R` Neustart, `N` neuer Seed.
+
+## Rhythmus: warum kein Spotify-Link
+
+Streaming-Dienste geben ihren Ton nicht heraus. Spotify, Apple Music und
+YouTube liefern ihn DRM-geschützt über Encrypted Media Extensions aus – der
+Seitencode bekommt nie Samples zu sehen, kann also weder den Takt messen noch
+die Musik in die Aufnahme mischen. Spotifys frühere Analyse-Schnittstelle
+(`audio-analysis` mit Tempo und Beat-Raster) ist für neue Anwendungen seit Ende
+2024 dicht. Ein eingefügter Link könnte also bestenfalls einen Titel anzeigen,
+nicht den Takt liefern.
+
+Deshalb zwei Wege, die wirklich funktionieren:
+
+1. **Audiodatei laden.** Die Datei wird im Browser decodiert und bleibt dort –
+   nichts wird hochgeladen. Aus dem Bassband wird eine Energiekurve gebildet,
+   deren Anstiege (Onsets) per Autokorrelation die Periode und per Phasensuche
+   die Eins ergeben. Klare Bassdrum, sicheres Ergebnis; bei Rubato-Klavier
+   nicht. Das erkannte Tempo steht im Statusfeld und lässt sich mit dem
+   BPM-Regler nachziehen. Die Musik läuft über denselben Knoten wie die
+   Trefferklänge und landet damit auch in der Aufnahme.
+2. **Tempo antippen oder BPM eintragen.** Reicht völlig, wenn die Musik erst in
+   CapCut oder InShot unter das fertige Video gelegt wird – dann muss nur das
+   Tempo stimmen. BPM-Werte findest du z. B. bei songbpm.com.
+
+`Bälle springen im Takt` regelt die Ballgeschwindigkeit nach jedem Aufschlag
+sanft nach (±15 %), bis die Treffer auf dem Taktraster landen. Das ist eine
+Regelung, keine Garantie: Bei sehr verwinkelten Formen bleibt ein Rest
+Unruhe – dafür bleibt die Physik echt.
 
 ## Aufbau
 
