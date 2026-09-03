@@ -36,9 +36,20 @@ function track(events) {
   return [0x4d, 0x54, 0x72, 0x6b, (len >>> 24) & 255, (len >>> 16) & 255, (len >>> 8) & 255, len & 255, ...body];
 }
 
-function file(tracks) {
-  const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, tracks.length, 0x01, 0xe0];
-  return Uint8Array.from([...head, ...tracks.flat()]).buffer;
+function file(tracks, { format = 1, vor = [], spuren = null } = {}) {
+  const n = spuren === null ? tracks.length : spuren;
+  const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, format, 0, n, 0x01, 0xe0];
+  return Uint8Array.from([...vor, ...head, ...tracks.flat()]).buffer;
+}
+
+/** Ein Chunk, den der Leser nicht kennt und überspringen muss. */
+function fremdChunk(len = 6) {
+  const body = new Array(len).fill(0x2a);
+  return [0x58, 0x46, 0x49, 0x52, (len >>> 24) & 255, (len >>> 16) & 255, (len >>> 8) & 255, len & 255, ...body];
+}
+
+function tempoTrack(usProQuarter) {
+  return track([{ d: 0, b: [0xff, 0x51, 0x03, (usProQuarter >> 16) & 255, (usProQuarter >> 8) & 255, usProQuarter & 255] }]);
 }
 
 test('nimmt je Zeitpunkt die Oberstimme und überspringt das Schlagzeug', () => {
@@ -55,7 +66,44 @@ test('nimmt je Zeitpunkt die Oberstimme und überspringt das Schlagzeug', () => 
     { d: 240, b: [0x91, 79, 90] },
     { d: 240, b: [79, 0] },                     // Running Status, Anschlag 0 = Ende
   ]);
-  assert.deepEqual(parseMidi(file([begleitung, melodie])), [72, 76, 79]);
+  assert.deepEqual(parseMidi(file([begleitung, melodie])).notes, [72, 76, 79]);
+});
+
+test('findet den Kopf auch hinter einem RIFF-Vorspann (.rmi)', () => {
+  const vor = [...'RIFF'].map((c) => c.charCodeAt(0)).concat([0, 0, 0, 0], [...'RMIDdata'].map((c) => c.charCodeAt(0)), [0, 0, 0, 0]);
+  const t = track([{ d: 0, b: [0x90, 64, 90] }, { d: 480, b: [0x90, 67, 90] }]);
+  assert.deepEqual(parseMidi(file([t], { vor })).notes, [64, 67]);
+});
+
+test('überspringt unbekannte Chunks statt abzubrechen', () => {
+  const t1 = track([{ d: 0, b: [0x90, 60, 90] }]);
+  const t2 = track([{ d: 480, b: [0x90, 67, 90] }]);   // später, sonst eine Akkordgruppe
+  const bytes = file([t1, fremdChunk(), t2], { spuren: 2 });
+  assert.deepEqual(parseMidi(bytes).notes, [60, 67]);
+});
+
+test('rechnet Ticks über Tempowechsel in Sekunden um', () => {
+  // 480 Ticks je Viertel, 500000 µs je Viertel = 120 bpm -> eine Viertel = 0,5 s
+  const t = track([
+    { d: 0, b: [0x90, 60, 90] },
+    { d: 480, b: [0x90, 62, 90] },
+    { d: 480, b: [0x90, 64, 90] },
+  ]);
+  const res = parseMidi(file([tempoTrack(500000), t], { spuren: 2 }));
+  assert.deepEqual(res.notes, [60, 62, 64]);
+  assert.deepEqual(res.times.map((x) => Math.round(x * 1000)), [0, 500, 1000]);
+
+  // 1000000 µs je Viertel = 60 bpm -> doppelt so lang
+  const langsam = parseMidi(file([tempoTrack(1000000), t], { spuren: 2 }));
+  assert.deepEqual(langsam.times.map((x) => Math.round(x * 1000)), [0, 1000, 2000]);
+});
+
+test('reiht Format-2-Spuren nacheinander statt sie zu stapeln', () => {
+  const t1 = track([{ d: 0, b: [0x90, 60, 90] }]);
+  const t2 = track([{ d: 0, b: [0x90, 67, 90] }]);
+  const res = parseMidi(file([t1, t2], { format: 2 }));
+  assert.deepEqual(res.notes, [60, 67]);
+  assert.ok(res.times[1] > res.times[0], 'zweite Spur muss später liegen');
 });
 
 test('meldet einen Fehler statt zu raten, wenn der Kopf fehlt', () => {
@@ -63,7 +111,7 @@ test('meldet einen Fehler statt zu raten, wenn der Kopf fehlt', () => {
 });
 
 test('läuft nicht über das Dateiende hinaus', () => {
-  const voll = new Uint8Array(file([track([{ d: 0, b: [0x90, 60, 90] }])]));
+  const voll = new Uint8Array(file([track([{ d: 0, b: [0x90, 60, 90] }, { d: 480, b: [0x90, 64, 90] }])]));
   for (let cut = 20; cut < voll.length; cut += 3) {
     const kurz = voll.slice(0, cut).buffer;      // abgeschnittene Datei
     try { parseMidi(kurz); } catch (e) {

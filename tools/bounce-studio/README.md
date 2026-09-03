@@ -45,11 +45,15 @@ Drei Notenquellen:
 - **Eingebaute Melodie** – sechs gemeinfreie Stücke (Korobeiniki, Für Elise,
   Ode an die Freude, In der Halle des Bergkönigs, Carol of the Bells, Alle meine
   Entchen). Kein Download nötig.
-- **MIDI-Datei** – lädt jedes `.mid`. Aus allen Spuren außer dem Schlagzeugkanal
-  werden die Note-Ons gesammelt, nach Zeit sortiert und je Zeitpunkt der höchste
-  Ton genommen: In fast jedem Satz liegt die Melodie in der Oberstimme. Ergebnis
-  ist eine einstimmige Notenfolge. Der Parser sitzt in `app.html` (`parseMidi`)
-  und kommt ohne Bibliothek aus.
+- **MIDI-Datei** – lädt jedes `.mid`, per Dateiwahl oder durch Ablegen auf die
+  Fläche. Aus allen Spuren außer dem Schlagzeugkanal werden die Note-Ons
+  gesammelt, nach Zeit sortiert und je Zeitpunkt der höchste Ton genommen: In
+  fast jedem Satz liegt die Melodie in der Oberstimme. Tempowechsel werden
+  mitgelesen, die Noten behalten also ihre echten Zeiten. Der Parser sitzt in
+  `app.html` (`parseMidi`) und kommt ohne Bibliothek aus; er verträgt
+  RIFF-verpackte Dateien (`.rmi`), Müll vor dem Kopf, unbekannte Chunks,
+  Running Status, Format 0/1/2 und abgeschnittene Dateien. Scheitert es doch,
+  nennt die Statuszeile den Grund statt nur „ging nicht".
 - **Tonleiter** – die alte Variante: aufsteigende Pentatonik, Dur, Moll.
 
 Dazu fünf synthetisierte Klänge (Marimba, Klavier, Glocke, Zupf, Blip), eine
@@ -58,6 +62,27 @@ Auslösewahl (jeder Treffer / nur Wandtreffer / nur der erste Ball) und eine
 Melodie verträgt – die Rate deckelt das, ohne die Physik anzufassen. Für einen
 sauber erkennbaren Song sind wenige Bälle oder „nur der erste Ball" die richtige
 Wahl; für Krawall dreht man die Rate hoch.
+
+### Physik der Melodie anpassen
+
+Der Schalter **Physik der Melodie anpassen** macht aus dem Zufall ein Stück:
+Die Noten fallen dann genau auf ihre Zeiten – bei einer MIDI-Datei auf deren
+eigenen Rhythmus, sonst auf ein Raster aus BPM und Notenwert.
+
+Gefälscht wird dabei nur die **Uhr**, nie die Bahn. Nach jeder Note rechnet die
+Engine den Taktgeber-Ball voraus (`predictImpacts` simuliert eine Kopie der Welt
+und stellt sie danach vollständig zurück) und sammelt die nächsten Aufschläge.
+Aus denen wird der ausgewählt, der dem Sollabstand am nächsten kommt; die
+Aufschläge davor bleiben stumm. Dann läuft die Simulationszeit so viel schneller
+oder langsamer, dass dieser Aufschlag genau auf der Note liegt.
+
+Weil die Zeit gleichmäßig gedehnt wird, bleibt die Flugbahn exakt dieselbe wie
+ohne Anpassung – Physik im Sinne von *Bewegungsgesetze* stimmt weiter, nur die
+Abspielgeschwindigkeit schwankt. Gemessen (siehe `physics-test.mjs`): Der
+Median der Notenabstände trifft den Sollwert, über 85 % liegen innerhalb von
+zwei Bildern, und die Dehnung bleibt zwischen 0,4× und 2,5× – meist um 0,9×,
+also kaum sichtbar. Getaktet wird der erste Ball; alle anderen laufen mit und
+bleiben stumm.
 
 ### Aus einer MP3 geht das nicht
 
@@ -105,15 +130,22 @@ Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 - `build.mjs` – legt genau diesen Rahmen darum und schreibt `index.html`.
 - `index.html` – erzeugt, eingecheckt, für den Doppelklick-Betrieb.
 
+- `harness.mjs` – lädt die Engine mit einer knappen Attrappe für DOM, Canvas
+  und WebAudio in Node und treibt die Bildschleife mit festem Takt. Damit lässt
+  sich die Physik ohne Browser messen.
+- `physics-test.mjs` – Prallverhalten, Vermehrung, „kein Ball verlässt die
+  Form", Rückstellung nach der Vorhersage und die Trefferzeiten der
+  Zeitdehnung.
 - `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
   gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
-  Status, abgeschnittene Dateien).
+  Status, RIFF-Vorspann, unbekannte Chunks, Tempowechsel, Format 2,
+  abgeschnittene Dateien).
 
 Nach jeder Änderung an `app.html`:
 
 ```bash
 npm run bounce:build     # index.html neu schreiben
-npm run bounce:test      # MIDI-Leser prüfen
+npm run bounce:test      # Physik, Zeitdehnung und MIDI-Leser prüfen
 ```
 
 ## Technik in Kürze

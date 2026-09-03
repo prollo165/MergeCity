@@ -33,7 +33,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "bounce:build": "node tools/bounce-studio/build.mjs",
-    "bounce:test": "node --test tools/bounce-studio/midi-test.mjs",
+    "bounce:test": "node --test tools/bounce-studio/*-test.mjs",
     "test": "rm -rf .test-build && tsc --project tsconfig.test.json && node --test .test-build/game/__tests__/*.test.js"
   },
   "private": true

@@ -254,7 +254,7 @@
     border: 1px dashed var(--rule); background: var(--raised); color: var(--silk);
     transition: border-color .12s, background .12s;
   }
-  .filebtn:hover { border-color: var(--signal); background: var(--raised-hi); }
+  .filebtn:hover, .filebtn.over { border-color: var(--signal); background: var(--raised-hi); }
   .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .filebtn:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
 
@@ -373,6 +373,7 @@
     hud: true, hudTitle: 'WIE VIELE WERDEN ES?', target: 180,
     melSrc: 'builtin', melPick: 'korobeiniki', scale: 'penta',
     instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
+    warp: false, noteLen: 0.5,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
     beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
     outRes: 720, bitrate: 4, recLimit: 15,
@@ -686,6 +687,8 @@
     world.beats = 0;
     mel.pos = -1;
     mel.last = 0;
+    warp = 1;
+    warpCount = 0;
     if (P.rhythm === 'song' && song.buffer) {
       stopSong();
       songPos = P.songStart;
@@ -700,6 +703,16 @@
   const MAXV = 4200;
 
   function substep(dt) {
+    substepPhysics(dt, world.balls);
+    world.time += dt;
+    if (world.flash > 0) world.flash = Math.max(0, world.flash - dt * 4.5);
+    if (world.shake > 0) world.shake = Math.max(0, world.shake - dt * 3.2);
+    stepEffects(dt);
+  }
+
+  /** Nur Bewegung und Stöße – ohne Effekte und Uhr, damit die Vorhersage für
+      die Zeitdehnung denselben Code benutzen kann. */
+  function substepPhysics(dt, balls) {
     // Der Taktpuls weitet die Wand kurz – die Kollision nutzt denselben Radius,
     // die Form atmet also wirklich, statt nur heller zu leuchten.
     if (world.pulse > 0) world.pulse = Math.max(0, world.pulse - dt * 3.6);
@@ -710,7 +723,7 @@
       updateShape();
     }
     updateBarriers(dt);
-    const balls = world.balls, g = P.gravity;
+    const g = P.gravity;
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
       b.vy += g * dt;
@@ -722,10 +735,64 @@
       collideWall(b);
       collideBarriers(b);
     }
-    world.time += dt;
-    if (world.flash > 0) world.flash = Math.max(0, world.flash - dt * 4.5);
-    if (world.shake > 0) world.shake = Math.max(0, world.shake - dt * 3.2);
-    stepEffects(dt);
+  }
+
+  /* --- Zeitdehnung -------------------------------------------------------
+     Die ehrliche Art, die Physik an die Melodie anzupassen: Die Bahn bleibt
+     unangetastet, nur die Uhr läuft schneller oder langsamer, damit der
+     nächste Aufschlag genau auf der nächsten Note landet. Dafür wird der
+     Taktgeber-Ball vorausberechnet und die Welt danach zurückgestellt. */
+  let warp = 1, warpCount = 0, predicting = false, predictHit = false;
+  const oneBall = [null], predictHits = [];
+
+  /** Zeiten der nächsten Aufschläge dieses Balls, in Sekunden Simulationszeit. */
+  function predictImpacts(b, horizon, max) {
+    const bars = world.barriers;
+    const save = {
+      x: b.x, y: b.y, vx: b.vx, vy: b.vy, r: b.r, cool: b.cool,
+      angle: world.angle, R: world.R, pulse: world.pulse,
+      a: bars.map((o) => (o.orbitR !== undefined ? o.phase : o.a)),
+      px: bars.map((o) => o.x), py: bars.map((o) => o.y),
+    };
+    oneBall[0] = b;
+    predicting = true;
+    predictHit = false;
+    predictHits.length = 0;
+    let t = 0;
+    while (t < horizon && predictHits.length < max) {
+      substepPhysics(DT, oneBall);
+      t += DT;
+      if (predictHit) { predictHit = false; predictHits.push(t); }
+    }
+    predicting = false;
+
+    b.x = save.x; b.y = save.y; b.vx = save.vx; b.vy = save.vy;
+    b.r = save.r; b.cool = save.cool;
+    world.angle = save.angle; world.R = save.R; world.pulse = save.pulse;
+    for (let i = 0; i < bars.length; i++) {
+      const o = bars[i];
+      if (o.orbitR !== undefined) { o.phase = save.a[i]; o.x = save.px[i]; o.y = save.py[i]; }
+      else o.a = save.a[i];
+    }
+    updateShape();
+    return predictHits.slice();
+  }
+
+  /* Ein Ball trifft meist viel öfter, als die Melodie Noten hat. Darum wird
+     unter den nächsten Aufschlägen der gesucht, der dem Sollabstand am
+     nächsten kommt – die Uhr muss dann nur noch leicht nachhelfen, statt die
+     Welt in Zeitlupe zu zwingen. Die Aufschläge davor bleiben stumm. */
+  function driveWarp(b) {
+    const gap = noteGap(mel.pos);
+    const hits = predictImpacts(b, Math.max(0.5, Math.min(4, gap * 2.6)), 24);
+    if (!hits.length) { warp = 1; warpCount = 0; return; }
+    let best = 0, bestErr = Infinity;
+    for (let i = 0; i < hits.length; i++) {
+      const err = Math.abs(Math.log(Math.max(1e-4, hits[i]) / gap));
+      if (err < bestErr) { bestErr = err; best = i; }
+    }
+    warp = Math.max(0.4, Math.min(2.5, hits[best] / gap));
+    warpCount = best;
   }
 
   /** Prallt den Ball an einer Fläche ab – optional mit Oberflächengeschwindigkeit. */
@@ -843,6 +910,7 @@
   }
 
   function onHit(b, x, y, kind) {
+    if (predicting) { predictHit = true; return; }
     world.hits++;
     b.hits++;
     if (P.colorMode === 'hit') b.ci++;
@@ -850,7 +918,13 @@
     if (P.shake) world.shake = Math.min(1, world.shake + 0.3);
     if (P.sparks) addSparks(x, y, colorOf(b));
     addRipple(x, y);
-    playNote(b, kind);
+    if (P.warp && b === world.balls[0]) {
+      // Nur der ausgewählte Aufschlag klingt – die Zwischenschläge nicht.
+      if (warpCount > 0) warpCount--;
+      else { playNote(b, kind); driveWarp(b); }
+    } else {
+      playNote(b, kind);
+    }
     maybeSplit(b, kind);
     // Das Nachziehen aufs Taktraster greift nur bei wenigen Bällen und an der
     // Wand – an rotierenden Barrieren ist die Flugzeit zu unberechenbar.
@@ -1162,8 +1236,18 @@
       65, 65, 65, 65, 64, 64, 62, 62, 62, 62, 60] },
   };
 
-  const mel = { notes: [], name: '', pos: -1, last: 0 };
-  let midiNotes = [], midiName = '';
+  const mel = { notes: [], times: null, name: '', pos: -1, last: 0 };
+  let midiNotes = [], midiTimes = null, midiName = '';
+
+  /** Sollzeit zwischen Note idx und der nächsten – aus der MIDI-Datei, sonst
+      aus dem eingestellten Notenwert. */
+  function noteGap(idx) {
+    const t = mel.times;
+    if (t && idx >= 0 && idx + 1 < t.length) {
+      return Math.max(0.07, Math.min(1.6, t[idx + 1] - t[idx]));
+    }
+    return Math.max(0.07, Math.min(1.6, (60 / Math.max(30, P.bpm)) * P.noteLen));
+  }
 
   function scaleNotes() {
     const sc = SCALES[P.scale] || SCALES.penta;
@@ -1175,13 +1259,13 @@
   function refreshMelody() {
     if (P.melSrc === 'builtin') {
       const m = MELODIES[P.melPick] || MELODIES.korobeiniki;
-      mel.notes = m.notes; mel.name = m.name;
+      mel.notes = m.notes; mel.times = null; mel.name = m.name;
     } else if (P.melSrc === 'midi') {
-      mel.notes = midiNotes; mel.name = midiName || 'MIDI';
+      mel.notes = midiNotes; mel.times = midiTimes; mel.name = midiName || 'MIDI';
     } else if (P.melSrc === 'scale') {
-      mel.notes = scaleNotes(); mel.name = 'Tonleiter';
+      mel.notes = scaleNotes(); mel.times = null; mel.name = 'Tonleiter';
     } else {
-      mel.notes = []; mel.name = '';
+      mel.notes = []; mel.times = null; mel.name = '';
     }
     mel.pos = -1;
     const show = (key, on) => {
@@ -1191,8 +1275,13 @@
     };
     show('melPick', P.melSrc === 'builtin');
     show('scale', P.melSrc === 'scale');
+    show('melTrigger', !P.warp);
+    show('melRate', !P.warp);
+    show('noteLen', !(P.melSrc === 'midi' && midiTimes));
     const midi = el('midiRow');
     if (midi) midi.hidden = P.melSrc !== 'midi';
+    const wn = el('warpNote');
+    if (wn) wn.hidden = !P.warp;
     melStatus();
   }
 
@@ -1210,10 +1299,13 @@
     n.classList.add('on');
   }
 
-  /* --- MIDI lesen -------------------------------------------------------
-     Aus allen Spuren (ohne Schlagzeugkanal 10) werden die Note-Ons gesammelt,
-     nach Zeit sortiert und je Zeitpunkt der höchste Ton genommen: In fast
-     jedem Satz liegt die Melodie in der Oberstimme. */
+  /* --- MIDI lesen ---------------------------------------------------------
+     Robust gegen das, was einem im Netz begegnet: RIFF/RMID-Verpackung, Müll
+     vor dem Kopf, unbekannte Chunks zwischen den Spuren, Running Status,
+     abgeschnittene Dateien. Aus allen Spuren außer dem Schlagzeugkanal werden
+     die Note-Ons gesammelt und je Zeitpunkt der höchste Ton genommen: In fast
+     jedem Satz liegt die Melodie in der Oberstimme. Tempowechsel werden
+     mitgelesen, damit die Noten ihre echten Zeiten behalten. */
   function parseMidi(bytes) {
     const dv = new DataView(bytes);
     let pos = 0;
@@ -1229,54 +1321,99 @@
       return v;
     };
 
-    if (dv.byteLength < 14 || tag() !== 'MThd') throw new Error('Kein MIDI-Kopf');
+    // Kopf suchen statt voraussetzen: .rmi-Dateien stecken in einem
+    // RIFF-Container, manche Downloads tragen Müll davor.
+    let head = -1;
+    for (let i = 0; i + 4 <= dv.byteLength && i < 4096; i++) {
+      if (dv.getUint8(i) === 0x4d && dv.getUint8(i + 1) === 0x54 &&
+          dv.getUint8(i + 2) === 0x68 && dv.getUint8(i + 3) === 0x64) { head = i; break; }
+    }
+    if (head < 0) throw new Error('Darin steckt keine MIDI-Datei (Kopf „MThd" fehlt).');
+
+    pos = head + 4;
     const hlen = u32();
-    u16();                       // Format
-    const ntrk = u16();
+    const format = u16();
+    u16();                                     // Spurenzahl – wir lesen bis Dateiende
     const div = u16();
-    pos += hlen - 6;
+    pos = head + 8 + Math.max(6, hlen);
     const tpq = div & 0x8000 ? 480 : div || 480;
 
+    const tempos = [];
     const events = [];
-    for (let t = 0; t < ntrk && pos + 8 <= dv.byteLength; t++) {
-      if (tag() !== 'MTrk') break;
+    let seqOffset = 0;                         // nur für Format 2: Spuren nacheinander
+
+    while (pos + 8 <= dv.byteLength) {
+      const kind = tag();
       const len = u32();
       const end = Math.min(pos + len, dv.byteLength);
-      let tick = 0, running = 0;
+      if (kind !== 'MTrk') { pos = end; continue; }   // unbekannter Chunk: überspringen
+
+      let tick = 0, running = 0, maxTick = 0;
       while (pos < end) {
         tick += varlen();
-        if (pos >= end) break;                 // Spurende erreicht
+        if (pos >= end) break;
         let status = dv.getUint8(pos);
         if (status & 0x80) { pos++; running = status; } else { status = running; }
         const type = status & 0xf0;
         if (status === 0xff) {
-          u8();                                // Meta-Typ
-          pos += varlen();
+          const meta = u8();
+          const mlen = varlen();
+          if (meta === 0x51 && mlen === 3) tempos.push({ tick: tick + seqOffset, us: (u8() << 16) | (u8() << 8) | u8() });
+          else pos += mlen;
         } else if (status === 0xf0 || status === 0xf7) {
           pos += varlen();
         } else if (type === 0x90 || type === 0x80) {
           const note = u8(), vel = u8();
-          if (type === 0x90 && vel > 0 && (status & 0x0f) !== 9) events.push({ tick, note });
+          if (type === 0x90 && vel > 0 && (status & 0x0f) !== 9) {
+            events.push({ tick: tick + seqOffset, note });
+            if (tick > maxTick) maxTick = tick;
+          }
         } else if (type === 0xa0 || type === 0xb0 || type === 0xe0) { pos += 2; }
         else if (type === 0xc0 || type === 0xd0) { pos += 1; }
         else break;                            // unbekannter Status – Spur abbrechen
       }
       pos = end;
+      if (format === 2) seqOffset += maxTick + tpq;
     }
-    if (!events.length) throw new Error('Keine Noten gefunden');
+    if (!events.length) throw new Error('Die Datei enthält keine spielbaren Noten (nur Schlagzeug?).');
+
+    // Ticks in Sekunden: Tempowechsel abschnittsweise aufsummieren.
+    tempos.sort((a, b) => a.tick - b.tick);
+    const marks = [{ tick: 0, sec: 0, us: 500000 }];
+    for (const tp of tempos) {
+      const last = marks[marks.length - 1];
+      const sec = last.sec + ((tp.tick - last.tick) / tpq) * (last.us / 1e6);
+      if (tp.tick === last.tick) { last.us = tp.us; continue; }
+      marks.push({ tick: tp.tick, sec, us: tp.us });
+    }
+    let mi = 0;
+    const toSec = (t) => {
+      while (mi + 1 < marks.length && marks[mi + 1].tick <= t) mi++;
+      while (mi > 0 && marks[mi].tick > t) mi--;
+      const m = marks[mi];
+      return m.sec + ((t - m.tick) / tpq) * (m.us / 1e6);
+    };
 
     events.sort((a, b) => a.tick - b.tick || b.note - a.note);
     const tol = Math.max(1, tpq / 16);
-    const out = [];
+    const notes = [], times = [];
     let curTick = -1e9, curTop = -1;
+    const flush = () => { if (curTop >= 0) { notes.push(curTop); times.push(toSec(curTick)); } };
     for (const e of events) {
-      if (e.tick - curTick > tol) {
-        if (curTop >= 0) out.push(curTop);
-        curTick = e.tick; curTop = e.note;
-      } else if (e.note > curTop) curTop = e.note;
+      if (e.tick - curTick > tol) { flush(); curTick = e.tick; curTop = e.note; }
+      else if (e.note > curTop) curTop = e.note;
     }
-    if (curTop >= 0) out.push(curTop);
-    return out.slice(0, 2000);
+    flush();
+
+    // Liegt fast alles gleichzeitig (dichte Akkordsätze), lieber jede Note
+    // einzeln nehmen als eine Melodie aus drei Tönen zu behaupten.
+    if (notes.length < 8 && events.length >= 8) {
+      notes.length = 0; times.length = 0;
+      mi = 0;
+      for (const e of events) { notes.push(e.note); times.push(toSec(e.tick)); }
+    }
+    if (notes.length < 2) throw new Error('Zu wenige Noten für eine Melodie.');
+    return { notes: notes.slice(0, 4000), times: times.slice(0, 4000) };
   }
 
   async function loadMidi(file) {
@@ -1285,15 +1422,16 @@
     const n = el('melStatus');
     if (n) { n.textContent = 'Lese ' + file.name + ' …'; n.classList.remove('on'); }
     try {
-      const notes = parseMidi(await file.arrayBuffer());
-      if (notes.length < 4) throw new Error('zu kurz');
-      midiNotes = notes;
-      midiName = file.name.replace(/\.midi?$/i, '');
+      const res = parseMidi(await file.arrayBuffer());
+      midiNotes = res.notes;
+      midiTimes = res.times;
+      midiName = file.name.replace(/\.(midi?|rmi|kar)$/i, '');
       P.melSrc = 'midi';
       controls.melSrc();
       refreshMelody();
     } catch (e) {
-      if (n) { n.textContent = 'Das war keine lesbare MIDI-Datei (.mid).'; n.classList.remove('on'); }
+      // Der Grund hilft mehr als ein pauschales „ging nicht".
+      if (n) { n.textContent = e && e.message ? e.message : 'Die Datei ließ sich nicht lesen.'; n.classList.remove('on'); }
     }
   }
   function audioInit() {
@@ -1314,12 +1452,17 @@
   /** Ein Aufschlag rückt die Melodie um eine Note weiter und spielt sie. */
   function playNote(b, kind) {
     if (!ac || ac.state !== 'running' || !mel.notes.length) return;
-    if (P.melTrigger === 'wall' && kind !== 'wall') return;
-    if (P.melTrigger === 'first' && b !== world.balls[0]) return;
     const now = ac.currentTime;
-    // Bei hundert Bällen prasseln die Treffer schneller als eine Melodie
-    // verträgt – die Notenrate deckelt das, ohne die Physik anzufassen.
-    if (now - mel.last < 1 / Math.max(1, P.melRate)) return;
+    if (P.warp) {
+      // Bei Zeitdehnung spielt allein der Taktgeber – er trifft ja auf der Note.
+      if (b !== world.balls[0]) return;
+    } else {
+      if (P.melTrigger === 'wall' && kind !== 'wall') return;
+      if (P.melTrigger === 'first' && b !== world.balls[0]) return;
+      // Bei hundert Bällen prasseln die Treffer schneller als eine Melodie
+      // verträgt – die Notenrate deckelt das, ohne die Physik anzufassen.
+      if (now - mel.last < 1 / Math.max(1, P.melRate)) return;
+    }
     mel.last = now;
     mel.pos = (mel.pos + 1) % mel.notes.length;
     playTone(mel.notes[mel.pos], now);
@@ -1771,6 +1914,9 @@
           ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'], ['first', 'Nur dem ersten Ball'],
         ]),
         rng('melRate', 'Noten je Sekunde', 2, 20, 1, (v) => v + ' /s'),
+        tog('warp', 'Physik der Melodie anpassen', () => { warp = 1; refreshMelody(); }),
+        sel('noteLen', 'Notenwert', [[0.5, 'Achtel'], [1, 'Viertel'], [2, 'Halbe']], null, true),
+        { kind: 'custom', build: warpNote },
         rng('volume', 'Lautstärke', 0, 100, 1, (v) => v + ' %'),
       ],
     },
@@ -1867,13 +2013,34 @@
     row.id = 'midiRow';
     const l = document.createElement('label');
     l.className = 'filebtn wide';
-    l.textContent = 'MIDI-Datei laden · .mid';
+    l.textContent = 'MIDI laden · ablegen oder wählen';
     const i = document.createElement('input');
     i.type = 'file';
-    i.accept = '.mid,.midi,audio/midi,audio/x-midi';
+    // Bewusst ohne accept-Filter: Betriebssysteme melden für .mid ganz
+    // unterschiedliche Typen und grauen die Datei sonst im Dialog aus.
     i.addEventListener('change', () => { loadMidi(i.files && i.files[0]); i.value = ''; });
     l.appendChild(i);
+    // Ablegen per Ziehen geht auch.
+    l.addEventListener('dragover', (e) => { e.preventDefault(); l.classList.add('over'); });
+    l.addEventListener('dragleave', () => l.classList.remove('over'));
+    l.addEventListener('drop', (e) => {
+      e.preventDefault();
+      l.classList.remove('over');
+      loadMidi(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+    });
     row.appendChild(l);
+    return row;
+  }
+
+  function warpNote() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.id = 'warpNote';
+    const n = document.createElement('span');
+    n.className = 'status';
+    n.textContent = 'Die Bahn bleibt exakt – gedehnt wird nur die Uhr, bis der '
+      + 'erste Ball auf jeder Note aufschlägt. Alle anderen Bälle laufen mit.';
+    row.appendChild(n);
     return row;
   }
 
@@ -2096,7 +2263,7 @@
     pumpBeats();
 
     if (world.running) {
-      acc += real * P.tempo;
+      acc += real * P.tempo * warp;
       let n = 0;
       while (acc >= STEP && n < 4) {
         for (let s = 0; s < SUB; s++) substep(DT);
