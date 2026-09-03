@@ -24,6 +24,7 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | --- | --- |
 | **Form** | Kreis, Stern, Herz, Kapsel … samt Größe und Eigendrehung. Eine drehende Wand überträgt ihren Schwung auf den Ball. |
 | **Barrieren** | Ringe mit Lücke, Plinko-Pins, rotierende Balken, Kreuz-Spinner, Zickzack, kreisende Kugeln. |
+| **Kampf** | Zwei bis sechs Bälle treten gegeneinander an: Lebensbalken, Fähigkeiten, Schaden, eigenes Bild je Kämpfer. |
 | **Editor** | Eigene Balken, Kreise und **Bilder (PNG/GIF/JPG)** direkt ins Bild setzen, verschieben, drehen, drehen lassen, Startpunkt legen, am Raster fangen. Level als Datei sichern und laden. |
 | **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, **Anzahl der Startbälle**, Ballgröße, Zeitlupe – und ob die Bälle **voneinander abprallen**. |
 | **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren / **nur bei Ballkontakt**), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
@@ -144,11 +145,37 @@ Garantie: Aufschläge exakt auf ein Raster zu zwingen ginge nur, indem man die
 Physik fälscht oder die Wände passend zur Musik konstruiert. Der musikalische
 Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 
+## Kampfmodus
+
+Zwei bis sechs Bälle treten gegeneinander an. Jeder Kämpfer hat Leben, eine
+Farbe, ein eigenes Bild und **eine Fähigkeit** – und nur ein Treffer durch
+diese Fähigkeit kostet Leben. Ein normaler Zusammenstoß schubst bloß.
+
+| Fähigkeit | Wirkung |
+| --- | --- |
+| **Klinge** | Eine kreisende Klinge am Ball trifft, wen sie streift. |
+| **Stachel** | Lädt sich im eingestellten Takt auf; die nächste Berührung verletzt und verbraucht die Ladung. |
+| **Geschoss** | Feuert im Takt auf den nächsten Gegner; das Geschoss vergeht an der Wand. |
+| **Aura** | Pulst im Takt Schaden im Umkreis. |
+| **Schild** | Blockt eine Weile jeden Schaden und wirft die Hälfte an den Angreifer zurück. |
+
+Je Kämpfer einstellbar: Name, Fähigkeit, Leben, Schaden je Treffer, Takt der
+Fähigkeit, Farbe und ein eigenes Bild. Nach einem Treffer ist ein Ball kurz
+unverwundbar (0,3 s), damit eine kreisende Klinge nicht in einem Bild alles
+abräumt. Oben im Bild steht je Kämpfer ein Lebensbalken mit Name und
+Fähigkeit, über jedem Ball ein kleiner. Wer keine Leben mehr hat, verschwindet;
+bleibt einer übrig, steht sein Name im Bild und die Simulation hält nach zwei
+Sekunden an – der Schluss bleibt also im Video stehen.
+
+Im Kampf teilen sich Bälle nicht, und die Ball-Ball-Stöße werden mit
+eingeschaltet: Ohne sie könnten sich die Kämpfer nicht berühren.
+
 ## Eigene Ballbilder
 
 Im Modul *Optik* lassen sich beliebig viele Bilder als Ballaussehen laden.
-Jedes wird einmal kreisrund vorgerendert (formatfüllend zugeschnitten), die
-Bälle greifen sie über ihren Farbindex ab und wechseln sie also durch.
+Jedes wird einmal kreisrund vorgerendert (formatfüllend zugeschnitten). Ein
+Ball bekommt sein Bild beim Start zugeteilt und **behält es** – auch wenn er
+die Farbe wechselt; teilt er sich, erbt das Kind dasselbe Bild.
 Animierte GIFs bekommen je Einzelbild eine eigene Scheibe. Mit *Ballbilder
 rollen mit* dreht sich das Bild passend zur Bewegung; oberhalb von 220 Bällen
 wird die Drehung ausgelassen. Der farbige Schein bleibt unter dem Bild
@@ -221,7 +248,10 @@ nicht im Video landen.
   GIF-Einzelbilder nach ihren eigenen Zeiten weiterlaufen. Dazu: dass der Song
   erst ab der Zielzahl freigegeben wird, dass der Rahmen die Bälle im ganzen
   Bild hält, dass ein selbst gesetzter Startpunkt gilt und dass Deko ohne
-  Kollision nichts ablenkt.
+  Kollision nichts ablenkt. Für den Kampf: dass ein Ball sein Bild behält und
+  vererbt, dass zwei Kämpfer ohne angreifende Fähigkeit kein Leben verlieren,
+  dass Klinge, Geschoss und Aura treffen und dass der Sieger richtig bestimmt
+  wird.
 
   Alle Tests laufen mit festem Seed (4711) und setzen jeden Regler zurück –
   sonst hinge ihr Ergebnis am Test davor.

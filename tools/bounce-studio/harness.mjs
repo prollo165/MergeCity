@@ -81,7 +81,7 @@ export async function laden() {
   // Anker mit Ende der Funktion, sonst trifft der Ersatz den Aufruf in frame().
   const anker = '\n  requestAnimationFrame(frame);\n})();';
   const griff = '\n  globalThis.__engine = { world, P, mel, frame, reset, refreshMelody, '
-    + 'predictImpacts, audioResume, noteGap, parseMidi, song, maskFromAlpha, sampleSdf, setFrames, gifBild, ballLooks, '
+    + 'predictImpacts, audioResume, noteGap, parseMidi, song, maskFromAlpha, sampleSdf, setFrames, gifBild, ballLooks, fighters, '
     + 'get unlocked() { return unlocked; }, setSeed: (v) => { seed = v; }, '
     + 'get warp() { return warp; }, get songPos() { return songPos; } };\n})();';
   const patched = code.replace(anker, griff);

@@ -23,10 +23,11 @@ function stelle(werte = {}) {
     melSrc: 'builtin', melPick: 'korobeiniki', warp: false, noteLen: 0.5, bpm: 120,
     melTrigger: 'all', melRate: 7, rhythm: 'off',
     songMode: 'unlock', unlockAt: 60, songTrigger: 'all', songStart: 0, burstLen: 0.28,
-    snap: false, editSize: 70,
+    snap: false, editSize: 70, fight: false, fightCount: 2,
   }, werte);
   world.custom.length = 0;
   world.spawn = null;
+  world.running = true;          // ein gewonnener Kampf friert die Welt ein
   engine.song.buffer = null;
   engine.setSeed(4711);          // fester Seed: sonst wäre kein Lauf wiederholbar
   engine.refreshMelody();
@@ -363,4 +364,61 @@ test('Deko ohne Kollision lenkt nichts ab', () => {
   laufen(engine, 25);
   assert.ok(world.balls[0].vy < 0, 'mit Kollision hätte er zurückkommen müssen');
   world.custom.length = 0;
+});
+
+test('das Ballbild bleibt an seinem Ball und wird beim Teilen vererbt', () => {
+  stelle({ split: 'off', startBalls: 4 });
+  assert.deepEqual(world.balls.map((b) => b.li), [0, 1, 2, 3]);
+  laufen(engine, 300);
+  assert.deepEqual(world.balls.map((b) => b.li), [0, 1, 2, 3], 'das Bild hat unterwegs gewechselt');
+  assert.ok(world.balls.some((b) => b.ci !== b.li), 'ohne Treffer sagt der Test nichts aus');
+
+  stelle({ split: 'always', splitChance: 100, startBalls: 1, maxBalls: 10 });
+  laufen(engine, 300);
+  assert.ok(world.balls.length > 2, 'nichts hat sich geteilt');
+  for (const b of world.balls) assert.equal(b.li, 0, 'ein Kind hat ein anderes Bild bekommen');
+});
+
+/** Stellt einen Kampf mit zwei frei beschriebenen Kämpfern auf. */
+function kampf(a, b, werte = {}) {
+  stelle(Object.assign({ barrier: 'none', gravity: 1600, ballSize: 30, startSpeed: 700 }, werte));
+  Object.assign(P, { fight: true, fightCount: 2, ballHit: true });
+  Object.assign(engine.fighters[0], { name: 'A', hp: 100, dmg: 10, rate: 1, ability: 'shield' }, a);
+  Object.assign(engine.fighters[1], { name: 'B', hp: 100, dmg: 10, rate: 1, ability: 'shield' }, b);
+  engine.reset();
+}
+
+test('im Kampf tut nur die Fähigkeit weh', () => {
+  // Zwei Schildträger können sich nicht verletzen – sie schubsen nur.
+  kampf({ ability: 'shield' }, { ability: 'shield' });
+  assert.equal(world.balls.length, 2, 'es stehen nicht zwei Kämpfer im Ring');
+  laufen(engine, 600);
+  assert.ok(world.hits > 10, 'die beiden sind sich nie begegnet');
+  for (const b of world.balls) assert.equal(b.hp, b.hpMax, 'ohne Fähigkeit ging Leben verloren');
+
+  // Mit Klinge fällt das Leben des Gegners.
+  kampf({ ability: 'blade', dmg: 8, rate: 0.7 }, { ability: 'shot', rate: 9 });
+  laufen(engine, 600);
+  const gegner = world.balls.find((b) => b.fi === 1);
+  assert.ok(!gegner || gegner.hp < gegner.hpMax, 'die Klinge hat nie getroffen');
+});
+
+test('wer keine Leben mehr hat, verliert', () => {
+  kampf({ ability: 'blade', dmg: 40, rate: 0.4 }, { ability: 'shot', hp: 60, rate: 9 });
+  laufen(engine, 1200);
+  assert.equal(world.winner, 0, 'der Sieger stimmt nicht: ' + world.winner);
+  assert.equal(world.balls.length, 1, 'der Verlierer steht noch im Bild');
+  assert.equal(world.balls[0].fi, 0);
+});
+
+test('Geschosse und Aura treffen ebenfalls', () => {
+  kampf({ ability: 'shot', dmg: 6, rate: 0.5 }, { ability: 'shield', rate: 9, hp: 400 });
+  laufen(engine, 900);
+  const ziel = world.balls.find((b) => b.fi === 1);
+  assert.ok(ziel && ziel.hp < ziel.hpMax, 'kein Geschoss hat getroffen');
+
+  kampf({ ability: 'aura', dmg: 5, rate: 0.6 }, { ability: 'shield', rate: 9, hp: 400 });
+  laufen(engine, 900);
+  const ziel2 = world.balls.find((b) => b.fi === 1);
+  assert.ok(ziel2 && ziel2.hp < ziel2.hpMax, 'die Aura hat nie gewirkt');
 });

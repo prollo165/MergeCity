@@ -264,6 +264,11 @@
   }
   .status.on { color: var(--signal); }
 
+  input[type="color"] {
+    width: 46px; height: 28px; padding: 2px; cursor: pointer;
+    background: var(--raised); border: 1px solid var(--rule); border-radius: 5px;
+  }
+
   .ed-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 6px 0 2px; }
   .ed-tools .btn { padding: 8px 4px; }
   .ed-tools .btn[aria-pressed="true"] {
@@ -388,6 +393,7 @@
     instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
     warp: false, noteLen: 0.5,
     editSize: 70, snap: false, wallShow: true,
+    fight: false, fightCount: 2,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
     songMode: 'unlock', burstLen: 0.28, songTrigger: 'all', unlockAt: 60,
     ballRoll: true,
@@ -494,7 +500,8 @@
   const world = {
     kind: 'circle', R: 470, Rbase: 470, angle: 0, om: 0,
     verts: [], norms: [], inR: 470,
-    barriers: [], custom: [], balls: [], sparks: [], ripples: [], spawn: null,
+    barriers: [], custom: [], balls: [], sparks: [], ripples: [], shots: [], spawn: null,
+    winner: null, overAt: 0,
     hits: 0, time: 0, flash: 0, shake: 0, running: true,
     pulse: 0, beats: 0, beatT: 0,
   };
@@ -683,11 +690,163 @@
   }
 
   /* ---------------------------------------------------------------- Bälle */
-  function spawn(x, y, vx, vy, r, ci, hue) {
-    return { x, y, vx, vy, r, ci, hue, hits: 0, cool: 0 };
+  function spawn(x, y, vx, vy, r, ci, hue, li) {
+    // li ist der feste Bildplatz dieses Balls – er ändert sich nie und wird
+    // beim Teilen an das Kind vererbt.
+    return { x, y, vx, vy, r, ci, hue, li: li || 0, hits: 0, cool: 0, rot: 0 };
+  }
+
+  /* ---------------------------------------------------------------- Kampf
+     Jeder Kämpfer ist ein Ball mit Leben und einer Fähigkeit. Nur Treffer
+     durch diese Fähigkeit tun weh – ein normaler Zusammenstoß schubst bloß. */
+  const ABILITIES = {
+    blade:  { name: 'Klinge',   info: 'Eine kreisende Klinge trifft, wen sie streift.' },
+    spike:  { name: 'Stachel',  info: 'Lädt sich auf; die nächste Berührung verletzt.' },
+    shot:   { name: 'Geschoss', info: 'Feuert auf den nächsten Gegner.' },
+    aura:   { name: 'Aura',     info: 'Pulst Schaden im Umkreis.' },
+    shield: { name: 'Schild',   info: 'Blockt eine Weile und wirft die Hälfte zurück.' },
+  };
+  const FIGHT_COLORS = ['#ff4d5e', '#3aa8ff', '#4ade80', '#facc15', '#c084fc', '#fb923c'];
+  const FIGHT_START = ['blade', 'shot', 'spike', 'aura', 'shield', 'blade'];
+
+  const fighters = [];
+  for (let i = 0; i < 6; i++) {
+    fighters.push({
+      name: 'Kämpfer ' + (i + 1),
+      ability: FIGHT_START[i],
+      hp: 100, dmg: 10, rate: 1.2,
+      color: FIGHT_COLORS[i],
+      src: null, look: null,
+    });
+  }
+  const kaempferZahl = () => Math.max(2, Math.min(6, P.fightCount | 0));
+
+  function nearestEnemy(b) {
+    let best = null, bd = Infinity;
+    for (const v of world.balls) {
+      if (v === b || v.fi === b.fi || v.hp <= 0) continue;
+      const d = (v.x - b.x) ** 2 + (v.y - b.y) ** 2;
+      if (d < bd) { bd = d; best = v; }
+    }
+    return best;
+  }
+  const ballOf = (fi) => world.balls.find((b) => b.fi === fi && b.hp > 0) || null;
+
+  function hurt(v, menge, angreifer) {
+    if (!v || v.hp <= 0 || v.inv > 0) return;
+    if (v.shieldUntil > world.time) {
+      v.inv = 0.25;
+      addSparks(v.x, v.y, '#9ad8ff');
+      if (angreifer) hurt(angreifer, menge * 0.5, null);   // die Hälfte zurück
+      return;
+    }
+    v.hp -= menge;
+    v.inv = 0.3;
+    world.flash = 1;
+    if (P.shake) world.shake = Math.min(1, world.shake + 0.5);
+    addSparks(v.x, v.y, '#ff6b6b');
+    addSparks(v.x, v.y, colorOf(v));
+    if (v.hp <= 0) {
+      v.hp = 0;
+      for (let i = 0; i < 6; i++) addSparks(v.x, v.y, colorOf(v));
+      const i = world.balls.indexOf(v);
+      if (i >= 0) world.balls.splice(i, 1);
+    }
+  }
+
+  function bladeEnds(b, f) {
+    const ang = world.time * (TAU / Math.max(0.3, f.rate)) + b.fi * 1.7;
+    const len = b.r * 2.4;
+    return {
+      ax: b.x - Math.cos(ang) * len * 0.3, ay: b.y - Math.sin(ang) * len * 0.3,
+      bx: b.x + Math.cos(ang) * len, by: b.y + Math.sin(ang) * len,
+    };
+  }
+
+  function fireShot(b, f) {
+    const ziel = nearestEnemy(b);
+    if (!ziel) return;
+    const dx = ziel.x - b.x, dy = ziel.y - b.y;
+    const d = Math.hypot(dx, dy) || 1;
+    world.shots.push({
+      x: b.x + (dx / d) * (b.r + 14), y: b.y + (dy / d) * (b.r + 14),
+      vx: (dx / d) * 1100, vy: (dy / d) * 1100,
+      r: 10, fi: b.fi, dmg: f.dmg, life: 3, color: f.color,
+    });
+  }
+
+  function pulseAura(b, f) {
+    const R = b.r * 3.4;
+    world.ripples.push({ x: b.x, y: b.y, life: 1, max: R, color: f.color });
+    for (const v of world.balls) {
+      if (v.fi === b.fi || v.hp <= 0) continue;
+      if (Math.hypot(v.x - b.x, v.y - b.y) < R + v.r) hurt(v, f.dmg, b);
+    }
+  }
+
+  /** Der Stachel wirkt beim Zusammenstoß – dort, wo sich die Bälle berühren. */
+  function fightContact(a, b) {
+    if (!P.fight || a.fi === undefined || b.fi === undefined || a.fi === b.fi) return;
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const f = fighters[x.fi];
+      if (f && f.ability === 'spike' && x.charged) { x.charged = false; hurt(y, f.dmg, x); }
+    }
+  }
+
+  function fightStep(dt) {
+    if (!P.fight) return;
+    for (const b of world.balls) {
+      if (b.fi === undefined) continue;
+      if (b.inv > 0) b.inv -= dt;
+      const f = fighters[b.fi];
+      if (!f) continue;
+      b.cd -= dt;
+      if (b.cd <= 0) {
+        b.cd = Math.max(0.25, f.rate);
+        if (f.ability === 'spike') b.charged = true;
+        else if (f.ability === 'shield') b.shieldUntil = world.time + Math.min(1.4, f.rate * 0.6);
+        else if (f.ability === 'shot') fireShot(b, f);
+        else if (f.ability === 'aura') pulseAura(b, f);
+      }
+      if (f.ability === 'blade') {
+        const e = bladeEnds(b, f);
+        A.x = e.ax; A.y = e.ay; Bp.x = e.bx; Bp.y = e.by;
+        for (const v of world.balls) {
+          if (v === b || v.fi === b.fi || v.hp <= 0 || v.inv > 0) continue;
+          const q = closestOnSeg(v.x, v.y, A, Bp);
+          if (Math.hypot(v.x - q.x, v.y - q.y) < v.r + 10) hurt(v, f.dmg, b);
+        }
+      }
+    }
+
+    const sh = world.shots;
+    for (let i = sh.length - 1; i >= 0; i--) {
+      const s = sh[i];
+      s.life -= dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      let weg = s.life <= 0 || wallDist(s.x, s.y) > -2;
+      if (!weg) {
+        for (const v of world.balls) {
+          if (v.fi === s.fi || v.hp <= 0) continue;
+          if (Math.hypot(v.x - s.x, v.y - s.y) < v.r + s.r) { hurt(v, s.dmg, ballOf(s.fi)); weg = true; break; }
+        }
+      }
+      if (weg) sh.splice(i, 1);
+    }
+
+    if (world.winner === null) {
+      const leben = new Set();
+      for (const b of world.balls) if (b.hp > 0) leben.add(b.fi);
+      if (leben.size <= 1) {
+        world.winner = leben.size ? [...leben][0] : -1;
+        world.overAt = world.time;
+      }
+    }
   }
 
   function colorOf(b) {
+    if (P.fight && b.fi !== undefined && fighters[b.fi]) return fighters[b.fi].color;
     const pal = PALETTES[P.palette] || PALETTES.neon;
     if (P.colorMode === 'flow') {
       const h = Math.round(((world.time * 70 + b.hue) % 360) / 12) * 12;
@@ -705,20 +864,46 @@
     world.ripples.length = 0;
     world.hits = 0; world.time = 0; world.flash = 0; world.shake = 0; world.angle = 0;
     if (world.kind === 'poly') updateShape();
-    const n = Math.max(1, Math.min(30, P.startBalls | 0));
-    // Mehrere Startbälle stehen nebeneinander, jeder mit eigener Richtung und
-    // eigener Farbe – sonst sähen sie aus wie einer.
-    const breite = Math.min(world.inR * 1.3, n * P.ballSize * 2.8);
-    for (let i = 0; i < n; i++) {
-      const a = -Math.PI / 2 + rrange(-0.75, 0.75);
-      const versatz = n === 1 ? 0 : (i / (n - 1) - 0.5) * breite;
-      const sx = world.spawn ? world.spawn.x : CX;
-      const sy = world.spawn ? world.spawn.y : CY - world.inR * 0.45;
-      world.balls.push(spawn(
-        sx + versatz + rrange(-12, 12), sy + rrange(-30, 30),
-        Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
-        P.ballSize, i, rnd() * 360,
-      ));
+    world.shots.length = 0;
+    world.winner = null;
+    world.overAt = 0;
+    if (P.fight) {
+      const k = kaempferZahl();
+      for (let i = 0; i < k; i++) {
+        const w = (i / k) * TAU - Math.PI / 2;
+        const a = rnd() * TAU;
+        const f = fighters[i];
+        const b = spawn(
+          CX + Math.cos(w) * world.inR * 0.6, CY + Math.sin(w) * world.inR * 0.6,
+          Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
+          Math.max(34, P.ballSize), i, rnd() * 360, i,   // im Kampf darf es größer sein
+        );
+        b.fi = i;
+        b.hpMax = Math.max(10, f.hp);
+        b.hp = b.hpMax;
+        b.cd = f.rate * (0.4 + 0.2 * i);
+        b.inv = 0;
+        b.charged = false;
+        b.shieldUntil = -1;
+        b.look = f.look;
+        world.balls.push(b);
+      }
+    } else {
+      const n = Math.max(1, Math.min(30, P.startBalls | 0));
+      // Mehrere Startbälle stehen nebeneinander, jeder mit eigener Richtung und
+      // eigener Farbe – sonst sähen sie aus wie einer.
+      const breite = Math.min(world.inR * 1.3, n * P.ballSize * 2.8);
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI / 2 + rrange(-0.75, 0.75);
+        const versatz = n === 1 ? 0 : (i / (n - 1) - 0.5) * breite;
+        const sx = world.spawn ? world.spawn.x : CX;
+        const sy = world.spawn ? world.spawn.y : CY - world.inR * 0.45;
+        world.balls.push(spawn(
+          sx + versatz + rrange(-12, 12), sy + rrange(-30, 30),
+          Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
+          P.ballSize, i, rnd() * 360, i,
+        ));
+      }
     }
     lastBeat = null;
     world.beats = 0;
@@ -744,6 +929,7 @@
 
   function substep(dt) {
     substepPhysics(dt, world.balls);
+    fightStep(dt);
     world.time += dt;
     if (world.flash > 0) world.flash = Math.max(0, world.flash - dt * 4.5);
     if (world.shake > 0) world.shake = Math.max(0, world.shake - dt * 3.2);
@@ -824,6 +1010,7 @@
     b.vx += (j * nx) / mb; b.vy += (j * ny) / mb;
 
     if (predicting) { predictHit = true; return; }
+    fightContact(a, b);
     // Beide wechseln die Farbe, geklungen wird aber nur einmal.
     b.hits++;
     if (P.colorMode === 'hit') b.ci++;
@@ -1288,6 +1475,7 @@
   }
 
   function maybeSplit(b, kind) {
+    if (P.fight) return;                       // im Kampf bleibt es bei den Kämpfern
     if (P.split === 'off' || b.cool > 0) return;
     if (world.balls.length >= P.maxBalls) return;
     if (P.split === 'barrier' && kind !== 'barrier') return;
@@ -1309,7 +1497,7 @@
 
     const c = spawn(b.x - Math.sin(ang) * nr * 0.9, b.y + Math.cos(ang) * nr * 0.9,
                     Math.cos(ang + half) * sp, Math.sin(ang + half) * sp,
-                    nr, P.colorMode === 'hit' ? b.ci : b.ci + 1, (b.hue + 37) % 360);
+                    nr, P.colorMode === 'hit' ? b.ci : b.ci + 1, (b.hue + 37) % 360, b.li);
     c.cool = 0.06;
     c.hits = b.hits;
     world.balls.push(c);
@@ -1433,6 +1621,13 @@
   }
 
   function addBallLook(vor, src) {
+    const look = makeLook(vor, src);
+    ballLooks.push(look);
+    return look;
+  }
+
+  /** Baut ein rundes Ballaussehen, ohne es in die gemeinsame Liste zu legen. */
+  function makeLook(vor, src) {
     const look = { src, sprites: [] };
     if (vor.frames && vor.frames.length > 1) {
       setFrames(look, vor.frames.slice(0, 24));
@@ -1440,7 +1635,6 @@
     } else {
       look.sprites.push(circleSprite(vor.img, 128));
     }
-    ballLooks.push(look);
     return look;
   }
 
@@ -1499,9 +1693,9 @@
     // Treffer-Wellen und Funken
     ctx.globalCompositeOperation = 'lighter';
     for (const r of world.ripples) {
-      ctx.strokeStyle = 'rgba(255,255,255,' + r.life * 0.3 + ')';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * 64 + 6, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = r.color ? withAlpha(r.color, r.life * 0.55) : 'rgba(255,255,255,' + r.life * 0.3 + ')';
+      ctx.lineWidth = r.color ? 7 : 3;
+      ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * (r.max || 64) + 6, 0, TAU); ctx.stroke();
     }
     for (const p of world.sparks) {
       ctx.fillStyle = withAlpha(p.col, Math.max(0, p.life) * 0.85);
@@ -1521,7 +1715,8 @@
       const rollen = P.ballRoll && balls.length <= 220;
       for (let i = 0; i < balls.length; i++) {
         const b = balls[i];
-        const spr = ballSprite(ballLooks[Math.abs(b.ci) % ballLooks.length]);
+        const eigen = b.look || ballLooks[Math.abs(b.li || 0) % ballLooks.length];
+        const spr = ballSprite(eigen);
         if (!spr) continue;
         const d = b.r * 2;
         if (rollen) {
@@ -1549,7 +1744,104 @@
       }
     }
 
+    if (P.fight) drawFight();
     if (P.hud) drawHud(pal);
+  }
+
+  function drawFight() {
+    ctx.lineCap = 'round';
+    for (const b of world.balls) {
+      const f = fighters[b.fi];
+      if (!f) continue;
+      if (f.ability === 'blade') {
+        const e = bladeEnds(b, f);
+        for (const [breite, farbe] of [[18, 'rgba(0,0,0,.4)'], [10, f.color], [3, '#ffffff']]) {
+          ctx.beginPath();
+          ctx.moveTo(e.ax, e.ay); ctx.lineTo(e.bx, e.by);
+          ctx.lineWidth = breite; ctx.strokeStyle = farbe; ctx.stroke();
+        }
+      } else if (f.ability === 'spike' && b.charged) {
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU + world.time * 2;
+          ctx.moveTo(b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r);
+          ctx.lineTo(b.x + Math.cos(a) * (b.r + 16), b.y + Math.sin(a) * (b.r + 16));
+        }
+        ctx.stroke();
+      } else if (f.ability === 'shield' && b.shieldUntil > world.time) {
+        ctx.strokeStyle = 'rgba(154, 216, 255, .9)';
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 13, 0, TAU); ctx.stroke();
+      } else if (f.ability === 'aura') {
+        const t = 1 - Math.max(0, Math.min(1, b.cd / Math.max(0.25, f.rate)));
+        ctx.strokeStyle = withAlpha(f.color, 0.2 + t * 0.45);
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 10 + t * 16, 0, TAU); ctx.stroke();
+      }
+      if (b.inv > 0) {                            // kurz nach einem Treffer blinken
+        ctx.strokeStyle = 'rgba(255,255,255,' + Math.max(0, Math.min(1, b.inv * 2)) + ')';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5, 0, TAU); ctx.stroke();
+      }
+    }
+
+    for (const s of world.shots) {
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.45, 0, TAU); ctx.fill();
+    }
+
+    for (const b of world.balls) {
+      if (b.hpMax === undefined) continue;
+      const w = Math.max(56, b.r * 2.6), x = b.x - w / 2, y = b.y - b.r - 26;
+      const p = Math.max(0, b.hp / b.hpMax);
+      ctx.fillStyle = 'rgba(0,0,0,.6)';
+      rrect(x - 3, y - 3, w + 6, 16, 8); ctx.fill();
+      ctx.fillStyle = fighters[b.fi] ? fighters[b.fi].color : '#ffffff';
+      rrect(x, y, Math.max(3, w * p), 10, 5); ctx.fill();
+    }
+  }
+
+  function drawFightHud() {
+    const k = kaempferZahl();
+    const x = 80, w = W - 160;
+    for (let i = 0; i < k; i++) {
+      const f = fighters[i];
+      const b = ballOf(i);
+      const y = 82 + i * 78;
+      const p = b && b.hpMax ? Math.max(0, b.hp / b.hpMax) : 0;
+
+      ctx.textAlign = 'left';
+      ctx.font = '600 36px "IBM Plex Sans", system-ui, sans-serif';
+      ctx.fillStyle = b ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.35)';
+      ctx.fillText(f.name.toUpperCase(), x, y - 14);
+
+      ctx.textAlign = 'right';
+      ctx.font = '500 30px "IBM Plex Mono", monospace';
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.fillText(ABILITIES[f.ability].name + '   ' + Math.max(0, Math.ceil(b ? b.hp : 0)), x + w, y - 14);
+
+      ctx.fillStyle = 'rgba(255,255,255,.14)';
+      rrect(x, y, w, 20, 10); ctx.fill();
+      ctx.fillStyle = f.color;
+      rrect(x, y, Math.max(4, w * p), 20, 10); ctx.fill();
+    }
+
+    ctx.textAlign = 'center';
+    if (world.winner !== null) {
+      const txt = world.winner >= 0
+        ? fighters[world.winner].name.toUpperCase() + ' GEWINNT'
+        : 'UNENTSCHIEDEN';
+      ctx.shadowColor = 'rgba(0,0,0,.65)';
+      ctx.shadowBlur = 30;
+      ctx.font = '92px "Archivo Black", "Arial Black", sans-serif';
+      ctx.fillStyle = world.winner >= 0 ? fighters[world.winner].color : '#ffffff';
+      ctx.fillText(txt, CX, CY);
+      ctx.shadowBlur = 0;
+    }
   }
 
   function drawObstacle(o) {
@@ -1630,6 +1922,8 @@
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
+
+    if (P.fight) { drawFightHud(); return; }
 
     const title = P.hudTitle.trim();
     if (title) {
@@ -2549,9 +2843,13 @@
 
   function levelData() {
     return {
-      v: 2,
+      v: 3,
       start: world.spawn,
       baelle: ballLooks.map((l) => l.src),
+      kaempfer: fighters.map((f) => ({
+        name: f.name, ability: f.ability, hp: f.hp, dmg: f.dmg, rate: f.rate,
+        color: f.color, src: f.src,
+      })),
       objekte: world.custom.map((o) => (o.t === 'img'
         ? { t: 'img', x: o.x, y: o.y, w: o.w, h: o.h, a: o.a, om: o.om, src: o.src, solid: o.solid !== false }
         : o.t === 'bar'
@@ -2618,6 +2916,22 @@
           for (const src of data.baelle.slice(0, 12)) {
             prepareImage(src).then((vor) => { addBallLook(vor, src); ballLookHint(); }).catch(() => {});
           }
+        }
+        if (Array.isArray(data.kaempfer)) {
+          data.kaempfer.slice(0, 6).forEach((roh, i) => {
+            const f = fighters[i];
+            if (!roh || !f) return;
+            f.name = String(roh.name || f.name).slice(0, 18);
+            f.ability = ABILITIES[roh.ability] ? roh.ability : f.ability;
+            f.hp = +roh.hp || f.hp;
+            f.dmg = +roh.dmg || f.dmg;
+            f.rate = +roh.rate || f.rate;
+            f.color = String(roh.color || f.color);
+            f.src = roh.src || null;
+            f.look = null;
+            if (f.src) prepareImage(f.src).then((vor) => { f.look = makeLook(vor, f.src); }).catch(() => {});
+          });
+          buildFightTabs();
         }
         syncEditor();
         edHint(world.custom.length + ' Hindernisse geladen'
@@ -2825,6 +3139,22 @@
       ],
     },
     {
+      title: 'Kampf', hint: 'Bälle gegeneinander', id: 'fightMod',
+      rows: [
+        tog('fight', 'Kampfmodus', () => {
+          if (P.fight && !P.ballHit) { P.ballHit = true; controls.ballHit(); }
+          refreshFightUI();
+          reset();
+          setRunning(true);
+        }),
+        rng('fightCount', 'Kämpfer', 2, 6, 1, (v) => v + ' Bälle', () => {
+          buildFightTabs();
+          if (P.fight) { reset(); setRunning(true); }
+        }),
+        { kind: 'custom', build: fightPanel },
+      ],
+    },
+    {
       title: 'Editor', hint: 'eigene Hindernisse', id: 'editorMod',
       rows: [
         { kind: 'custom', build: editorPanel },
@@ -2963,6 +3293,115 @@
     l.appendChild(i);
     row.appendChild(l);
     return row;
+  }
+
+  let fSel = 0;
+
+  function fightPanel() {
+    const wrap = document.createElement('div');
+    wrap.innerHTML =
+      '<div class="ed-tools" id="fTabs" role="group" aria-label="Kämpfer"></div>'
+      + '<div class="row"><label for="fName">Name</label>'
+      + '<input type="text" id="fName" class="wide" maxlength="18"></div>'
+      + '<div class="row"><label for="fAbility">Fähigkeit</label>'
+      + '<select id="fAbility" class="wide"></select></div>'
+      + '<div class="row"><span class="status" id="fInfo"></span></div>'
+      + '<div class="row"><label for="fHp">Leben</label><span class="val" id="fHpV"></span>'
+      + '<input type="range" id="fHp" class="wide" min="20" max="400" step="10"></div>'
+      + '<div class="row"><label for="fDmg">Schaden je Treffer</label><span class="val" id="fDmgV"></span>'
+      + '<input type="range" id="fDmg" class="wide" min="1" max="60" step="1"></div>'
+      + '<div class="row"><label for="fRate">Takt der Fähigkeit</label><span class="val" id="fRateV"></span>'
+      + '<input type="range" id="fRate" class="wide" min="0.3" max="3" step="0.1"></div>'
+      + '<div class="row"><label for="fColor">Farbe</label><input type="color" id="fColor"></div>'
+      + '<label class="filebtn wide" id="fImgBtn">Bild für diesen Kämpfer<input type="file"></label>'
+      + '<div class="row"><span class="status" id="fImgHint"></span></div>';
+    return wrap;
+  }
+
+  function buildFightTabs() {
+    const box = el('fTabs');
+    if (!box) return;
+    const k = kaempferZahl();
+    if (fSel >= k) fSel = 0;
+    box.innerHTML = '';
+    for (let i = 0; i < k; i++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn';
+      b.textContent = String(i + 1);
+      b.dataset.f = String(i);
+      b.style.borderColor = fighters[i].color;
+      b.addEventListener('click', () => { fSel = i; syncFight(); });
+      box.appendChild(b);
+    }
+    syncFight();
+  }
+
+  function syncFight() {
+    const box = el('fTabs');
+    if (!box) return;
+    for (const b of box.children) b.setAttribute('aria-pressed', String(+b.dataset.f === fSel));
+    const f = fighters[fSel];
+    el('fName').value = f.name;
+    el('fAbility').value = f.ability;
+    el('fInfo').textContent = ABILITIES[f.ability].info;
+    el('fHp').value = String(f.hp);
+    el('fHpV').textContent = f.hp + ' HP';
+    el('fDmg').value = String(f.dmg);
+    el('fDmgV').textContent = f.dmg + ' HP';
+    el('fRate').value = String(f.rate);
+    el('fRateV').textContent = f.rate.toFixed(1).replace('.', ',') + ' s';
+    el('fColor').value = f.color;
+    const h = el('fImgHint');
+    h.textContent = f.look ? 'Eigenes Bild gesetzt.' : 'Ohne Bild: einfarbige Kugel.';
+    h.classList.toggle('on', !!f.look);
+  }
+
+  function refreshFightUI() {
+    const m = el('fightMod');
+    if (m) m.classList.toggle('muted', !P.fight);
+  }
+
+  function wireFight() {
+    const sel2 = el('fAbility');
+    for (const k of Object.keys(ABILITIES)) {
+      const o = document.createElement('option');
+      o.value = k;
+      o.textContent = ABILITIES[k].name;
+      sel2.appendChild(o);
+    }
+    el('fName').addEventListener('input', (e) => { fighters[fSel].name = e.target.value; });
+    sel2.addEventListener('change', (e) => {
+      fighters[fSel].ability = e.target.value;
+      syncFight();
+      if (P.fight) { reset(); setRunning(true); }
+    });
+    el('fHp').addEventListener('input', (e) => { fighters[fSel].hp = +e.target.value; syncFight(); });
+    el('fDmg').addEventListener('input', (e) => { fighters[fSel].dmg = +e.target.value; syncFight(); });
+    el('fRate').addEventListener('input', (e) => { fighters[fSel].rate = +e.target.value; syncFight(); });
+    el('fColor').addEventListener('input', (e) => {
+      fighters[fSel].color = e.target.value;
+      buildFightTabs();
+    });
+    el('fImgBtn').querySelector('input').addEventListener('change', async (e) => {
+      const datei = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!datei) return;
+      const h = el('fImgHint');
+      h.textContent = 'Lese ' + datei.name + ' …';
+      try {
+        const src = await readAsDataUrl(datei);
+        const f = fighters[fSel];
+        f.src = src;
+        f.look = makeLook(await prepareImage(src), src);
+        for (const b of world.balls) if (b.fi === fSel) b.look = f.look;
+        syncFight();
+      } catch (err) {
+        h.textContent = 'Dieses Bild ließ sich nicht laden.';
+      }
+    });
+    buildFightTabs();
+    refreshFightUI();
   }
 
   function ballLookRow() {
@@ -3278,6 +3717,10 @@
     }
     draw();
 
+    // Nach dem Sieg kurz stehen lassen, damit der Schriftzug im Video bleibt.
+    if (P.fight && world.winner !== null && world.running && world.time - world.overAt > 2.5) {
+      setRunning(false);
+    }
     if (recording) {
       const t = (now - recStart) / 1000;
       el('recSize').textContent = 'REC ' + t.toFixed(1).replace('.', ',') + ' s';
@@ -3291,6 +3734,7 @@
   buildPresets();
   wireEditor();
   wireBallLooks();
+  wireFight();
   el('presets').firstElementChild.setAttribute('aria-pressed', 'true');
   setRes(P.outRes);
   reset();
