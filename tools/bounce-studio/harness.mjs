@@ -77,7 +77,8 @@ export async function laden() {
   // Anker mit Ende der Funktion, sonst trifft der Ersatz den Aufruf in frame().
   const anker = '\n  requestAnimationFrame(frame);\n})();';
   const griff = '\n  globalThis.__engine = { world, P, mel, frame, reset, refreshMelody, '
-    + 'predictImpacts, audioResume, noteGap, parseMidi, get warp() { return warp; } };\n})();';
+    + 'predictImpacts, audioResume, noteGap, parseMidi, song, '
+    + 'get warp() { return warp; }, get songPos() { return songPos; } };\n})();';
   const patched = code.replace(anker, griff);
   if (patched === code) throw new Error('Startaufruf in app.html nicht gefunden');
 

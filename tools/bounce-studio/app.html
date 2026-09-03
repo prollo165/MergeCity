@@ -361,6 +361,7 @@
     instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
     warp: false, noteLen: 0.5,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
+    songMode: 'burst', burstLen: 0.28, songTrigger: 'all',
     beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
     outRes: 720, bitrate: 4, recLimit: 15,
   };
@@ -675,10 +676,11 @@
     mel.last = 0;
     warp = 1;
     warpCount = 0;
-    if (P.rhythm === 'song' && song.buffer) {
+    if (songBereit()) {
       stopSong();
       songPos = P.songStart;
-      if (world.running) startSong(songPos);
+      burstUntil = 0;
+      if (world.running && P.songMode === 'loop') startSong(songPos);
     }
     paintBackground();
     updateReadout();
@@ -911,6 +913,7 @@
     } else {
       playNote(b, kind);
     }
+    playBurst(b, kind);
     maybeSplit(b, kind);
     // Das Nachziehen aufs Taktraster greift nur bei wenigen Bällen und an der
     // Wand – an rotierenden Barrieren ist die Flugzeit zu unberechenbar.
@@ -1462,7 +1465,7 @@
 
   function playTone(midi, now) {
     const f = 440 * Math.pow(2, (midi - 69) / 12);
-    const vol = (P.volume / 100) * 0.2 * (song.src ? 0.55 : 1);
+    const vol = (P.volume / 100) * 0.2 * (songBereit() ? 0.5 : 1);
     const g = ac.createGain();
     g.connect(master);
     lastVoice = now;
@@ -1523,17 +1526,24 @@
      nicht anzapfen: Deren Ton ist DRM-geschützt und für Seitencode weder les-
      noch analysierbar. Darum Datei oder BPM. */
   const song = {
-    buffer: null, name: '', period: 0, phase: 0, bpm: 0,
+    buffer: null, name: '', label: '', period: 0, phase: 0, bpm: 0,
     src: null, gain: null, startedAt: 0,
   };
   let songPos = 0, lastBeat = null, taps = [];
+  let burstUntil = 0;                        // bis wann der laufende Schnipsel klingt
+
+  const songBereit = () => P.rhythm === 'song' && !!song.buffer;
+  const schnipselModus = () => songBereit() && P.songMode === 'burst';
 
   const fmtClock = (sec) =>
     Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
 
   function beatInfo() {
     if (P.rhythm === 'off') return null;
-    if (P.rhythm === 'song' && song.buffer && song.period > 0) {
+    if (songBereit() && song.period > 0) {
+      // Im Schnipselbetrieb läuft der Song nicht durch – dann taktet die
+      // Simulationsuhr mit dem erkannten Tempo der Datei.
+      if (P.songMode === 'burst') return { per: song.period, ph: 0, t: world.time };
       return { per: song.period, ph: song.phase, t: songTime() };
     }
     return { per: 60 / Math.max(30, P.bpm), ph: 0, t: world.time };
@@ -1564,6 +1574,40 @@
     songPos = songTime();
     try { song.src.stop(); } catch (e) { /* war schon zu Ende */ }
     song.src = null;
+  }
+
+  /* Der Song läuft nicht im Hintergrund, sondern rückt bei jedem Treffer um
+     einen Schnipsel vor – das Stück wird also erst durch die Bälle hörbar.
+     Kurze Ein- und Ausblenden verhindern das Knacken an den Schnittkanten. */
+  function playBurst(b, kind) {
+    if (!ac || ac.state !== 'running' || !schnipselModus()) return;
+    if (P.songTrigger === 'wall' && kind !== 'wall') return;
+    if (P.songTrigger === 'first' && b !== world.balls[0]) return;
+
+    const now = ac.currentTime;
+    if (now < burstUntil - 0.004) return;    // ein Schnipsel nach dem anderen
+    const dur = song.buffer.duration;
+    const len = Math.max(0.05, Math.min(P.burstLen, dur));
+    if (songPos > dur - 0.03) songPos = Math.max(0, Math.min(P.songStart, dur - len));
+    const off = Math.max(0, Math.min(songPos, dur - 0.03));
+
+    const src = ac.createBufferSource();
+    const g = ac.createGain();
+    src.buffer = song.buffer;
+    src.connect(g);
+    g.connect(master);
+
+    const vol = Math.max(0.0002, P.songVol / 100);
+    const fade = Math.min(0.014, len * 0.25);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(vol, now + fade);
+    g.gain.setValueAtTime(vol, now + Math.max(fade, len - fade));
+    g.gain.linearRampToValueAtTime(0.0001, now + len);
+    src.start(now, off, len + 0.03);
+    src.stop(now + len + 0.02);
+
+    songPos = off + len;
+    burstUntil = now + len;
   }
 
   function onBeat() {
@@ -1666,7 +1710,8 @@
       P.bpm = Math.max(60, Math.min(200, Math.round(res.bpm)));
       controls.rhythm(); controls.bpm();
       refreshRhythm();
-      songStatus(file.name + ' · ' + Math.round(res.bpm) + ' BPM · ' + fmtClock(audio.duration), true);
+      song.label = file.name + ' · ' + Math.round(res.bpm) + ' BPM · ' + fmtClock(audio.duration);
+      songStatus(song.label, true);
       reset();
     } catch (e) {
       songStatus('Diese Datei ließ sich nicht lesen. MP3, M4A, WAV oder OGG gehen.');
@@ -1691,6 +1736,17 @@
   function refreshRhythm() {
     const m = el('rhythmMod');
     if (m) m.classList.toggle('muted', P.rhythm === 'off');
+    const zeile = (key, an) => {
+      const c = el('c_' + key);
+      const row = c && c.closest('.row');
+      if (row) row.hidden = !an;
+    };
+    const alsSong = P.rhythm === 'song';
+    zeile('songMode', alsSong);
+    zeile('burstLen', alsSong && P.songMode === 'burst');
+    zeile('songTrigger', alsSong && P.songMode === 'burst');
+    zeile('songStart', alsSong);
+    zeile('songVol', alsSong);
   }
 
   /* ---------------------------------------------------------------- Aufnahme */
@@ -1914,13 +1970,26 @@
         ], () => {
           refreshRhythm();
           lastBeat = null;
-          if (P.rhythm !== 'song') stopSong();
+          if (P.rhythm !== 'song' || P.songMode === 'burst') stopSong();
           else if (song.buffer && world.running) startSong(songPos);
         }),
         rng('bpm', 'Tempo', 60, 200, 1, (v) => v + ' BPM', () => { lastBeat = null; }),
         { kind: 'custom', build: tapRow },
         { kind: 'custom', build: fileRow },
         { kind: 'custom', build: statusRow },
+        sel('songMode', 'Abspielweise', [
+          ['burst', 'Schnipsel bei Treffer'], ['loop', 'Durchgehend im Hintergrund'],
+        ], () => {
+          refreshRhythm();
+          stopSong();
+          songPos = P.songStart;
+          burstUntil = 0;
+          if (P.songMode === 'loop' && songBereit() && world.running) startSong(songPos);
+        }),
+        rng('burstLen', 'Schnipsellänge', 0.05, 1, 0.01, (v) => Math.round(v * 1000) + ' ms'),
+        sel('songTrigger', 'Schnipsel bei', [
+          ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'], ['first', 'Nur dem ersten Ball'],
+        ]),
         rng('songStart', 'Startpunkt im Song', 0, 240, 1, fmtClock, () => { songPos = P.songStart; }),
         rng('songVol', 'Musiklautstärke', 0, 100, 1, (v) => v + ' %', () => {
           if (song.gain) song.gain.gain.value = P.songVol / 100;
@@ -2209,6 +2278,7 @@
     el('mFps').textContent = String(Math.round(fps));
     el('mSeed').textContent = String(seed).padStart(4, '0');
     melStatus();
+    if (schnipselModus() && song.label) songStatus(song.label + ' · bei ' + fmtClock(songPos), true);
   }
   /* Die Schiene bekommt genau die Höhe, die unter dem Kopf frei ist – so ist
      sie auch ungescrollt vollständig sichtbar und scrollt nur in sich selbst. */
@@ -2226,7 +2296,7 @@
   function setRunning(v) {
     const was = world.running;
     world.running = v;
-    if (P.rhythm === 'song' && song.buffer && was !== v) {
+    if (songBereit() && P.songMode === 'loop' && was !== v) {
       if (v) startSong(songPos); else stopSong();
     }
     syncPlay();

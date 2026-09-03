@@ -101,3 +101,41 @@ test('ohne Dehnung folgt die Melodie einfach den Aufschlägen', () => {
   const aufRaster = g.filter((x) => Math.abs(x - 250) <= 34).length / g.length;
   assert.ok(aufRaster < 0.6, 'ohne Dehnung sollte nichts aufs Raster fallen (' + (aufRaster * 100).toFixed(0) + '%)');
 });
+
+test('der Song rückt nur bei Treffern schnipselweise vor', () => {
+  stelle({ maxBalls: 1 });
+  Object.assign(P, {
+    rhythm: 'song', songMode: 'burst', burstLen: 0.25,
+    songTrigger: 'all', songStart: 0, songVol: 80,
+  });
+  engine.song.buffer = { duration: 60 };          // Attrappe statt echter Datei
+  engine.reset();
+
+  const start = engine.songPos;
+  laufen(engine, 300);                            // fünf Sekunden
+  const gerueckt = engine.songPos - start;
+  assert.ok(gerueckt > 0.5, 'der Song bewegt sich gar nicht: ' + gerueckt.toFixed(2));
+  assert.ok(gerueckt <= 5.3, 'Schnipsel überlappen sich: ' + gerueckt.toFixed(2) + 's in 5s');
+
+  // Steht das Spiel, gibt es keine Treffer – und der Song bleibt stehen.
+  const stand = engine.songPos;
+  world.running = false;
+  laufen(engine, 120);
+  assert.equal(engine.songPos, stand, 'der Song läuft ohne Treffer weiter');
+  world.running = true;
+
+  // Auch reine Wandtreffer lösen aus (ohne Barrieren trifft er nur die Wand).
+  Object.assign(P, { songTrigger: 'wall', barrier: 'none' });
+  engine.reset();
+  const nurWand = engine.songPos;
+  laufen(engine, 300);
+  assert.ok(engine.songPos - nurWand > 0.5, 'Wandtreffer lösen keinen Schnipsel aus');
+
+  // Barrierentreffer allein dürfen dann nichts auslösen.
+  Object.assign(P, { songTrigger: 'wall', barrier: 'pegs', bCount: 5 });
+  engine.reset();
+  const vorher = { pos: engine.songPos, treffer: world.hits };
+  laufen(engine, 300);
+  const schnipsel = (engine.songPos - vorher.pos) / P.burstLen;
+  assert.ok(schnipsel <= world.hits - vorher.treffer, 'mehr Schnipsel als Treffer');
+});

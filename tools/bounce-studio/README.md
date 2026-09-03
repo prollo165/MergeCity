@@ -29,7 +29,7 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
 | **Melodie** | Jeder Aufschlag rückt eine Note weiter – die Bälle spielen das Lied. Quelle: eingebaute Melodie, MIDI-Datei oder Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
-| **Rhythmus** | Taktquelle wählen (BPM-Taktgeber oder Audiodatei), dann pulsiert die Form, wechselt die Farbe, teilen sich Bälle oder springen im Takt. |
+| **Rhythmus** | Taktquelle wählen (BPM-Taktgeber oder Audiodatei). Der geladene Song läuft entweder durchgehend im Hintergrund oder **schnipselweise bei jedem Treffer**. Auf der Zählzeit pulsiert die Form, wechselt die Farbe, teilen sich Bälle. |
 | **Export** | Auflösung, Bitrate, Länge. `Aufnahme` startet den Lauf neu und stoppt automatisch. |
 
 Tasten: `Leertaste` Start/Pause, `R` Neustart, `N` neuer Seed.
@@ -110,6 +110,21 @@ Deshalb zwei Wege, die wirklich funktionieren:
    nicht. Das erkannte Tempo steht im Statusfeld und lässt sich mit dem
    BPM-Regler nachziehen. Die Musik läuft über denselben Knoten wie die
    Trefferklänge und landet damit auch in der Aufnahme.
+   Für die Wiedergabe gibt es zwei Weisen:
+
+   - **Schnipsel bei Treffer** (Voreinstellung): Der Song läuft *nicht* im
+     Hintergrund, sondern rückt bei jedem Aufschlag um einen Schnipsel vor –
+     das Stück wird also erst durch die Bälle hörbar, Stück für Stück. Länge
+     einstellbar (50 ms bis 1 s), auslösbar durch jeden Treffer, nur
+     Wandtreffer oder nur den ersten Ball. Kurze Ein- und Ausblenden
+     verhindern das Knacken an den Schnittkanten, und ein neuer Schnipsel
+     beginnt erst, wenn der vorige zu Ende ist. Die Statuszeile zeigt mit,
+     wo im Song man gerade steht.
+   - **Durchgehend im Hintergrund**: der Song läuft normal mit, wie in einem
+     Schnittprogramm.
+
+   Beides landet über denselben Audioknoten in der Aufnahme.
+
 2. **Tempo antippen oder BPM eintragen.** Reicht völlig, wenn die Musik erst in
    CapCut oder InShot unter das fertige Video gelegt wird – dann muss nur das
    Tempo stimmen. BPM-Werte findest du z. B. bei songbpm.com.
@@ -134,8 +149,9 @@ Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
   und WebAudio in Node und treibt die Bildschleife mit festem Takt. Damit lässt
   sich die Physik ohne Browser messen.
 - `physics-test.mjs` – Prallverhalten, Vermehrung, „kein Ball verlässt die
-  Form", Rückstellung nach der Vorhersage und die Trefferzeiten der
-  Zeitdehnung.
+  Form", Rückstellung nach der Vorhersage, die Trefferzeiten der Zeitdehnung
+  und dass der Song nur bei Treffern und nie schneller als in Echtzeit
+  vorrückt.
 - `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
   gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
   Status, RIFF-Vorspann, unbekannte Chunks, Tempowechsel, Format 2,
