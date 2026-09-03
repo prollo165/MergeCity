@@ -1065,6 +1065,109 @@
     return { gw, gh, data };
   }
 
+  /* Animierte GIFs: Ein <img>, das nicht im Dokument hängt, animiert in den
+     meisten Browsern nicht – drawImage zeigte dann ewig das erste Bild. Wo es
+     den ImageDecoder gibt, zerlegen wir das GIF selbst in Einzelbilder und
+     schalten sie nach ihren eigenen Zeiten weiter; sonst hängen wir das Bild
+     unsichtbar ins Dokument, damit der Browser es wenigstens selbst
+     weiterlaufen lässt. */
+  const gifHalter = document.createElement('div');
+  gifHalter.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;'
+    + 'overflow:hidden;opacity:.01;pointer-events:none';
+  if (document.body) document.body.appendChild(gifHalter);
+
+  function dataUrlBytes(src) {
+    const roh = atob(src.slice(src.indexOf(',') + 1));
+    const out = new Uint8Array(roh.length);
+    for (let i = 0; i < roh.length; i++) out[i] = roh.charCodeAt(i);
+    return out;
+  }
+
+  async function decodeGif(bytes) {
+    if (typeof ImageDecoder === 'undefined') return null;
+    const dec = new ImageDecoder({ data: bytes, type: 'image/gif' });
+    // Erst wenn die Spurdaten da sind, steht die Zahl der Einzelbilder fest.
+    if (dec.tracks && dec.tracks.ready) await dec.tracks.ready;
+    await dec.completed;
+    const spur = dec.tracks && dec.tracks.selectedTrack;
+    const n = Math.min(spur ? spur.frameCount : 1, 120);
+    if (n < 2) { dec.close(); return null; }
+    const frames = [];
+    for (let i = 0; i < n; i++) {
+      const { image } = await dec.decode({ frameIndex: i });
+      const c = document.createElement('canvas');
+      c.width = image.displayWidth;
+      c.height = image.displayHeight;
+      c.getContext('2d').drawImage(image, 0, 0);
+      // duration kommt in Mikrosekunden; 0 heißt „so schnell wie möglich“.
+      frames.push({ c, dt: Math.max(0.02, (image.duration || 100000) / 1e6) });
+      image.close();
+    }
+    dec.close();
+    return frames;
+  }
+
+  /** Legt Startzeiten und Gesamtdauer der Einzelbilder ans Objekt. */
+  function setFrames(o, frames) {
+    o.frames = frames;
+    if (!frames || frames.length < 2) return;
+    o.cum = [];
+    let t = 0;
+    for (const f of frames) { o.cum.push(t); t += f.dt; }
+    o.gifLen = t;
+    o.gifIdx = 0;
+  }
+
+  /** Das Einzelbild, das jetzt dran ist. */
+  function gifBild(o) {
+    const fr = o.frames;
+    if (!fr || !fr.length) return o.img;
+    if (fr.length < 2) return fr[0].c;
+    const t = (performance.now() / 1000) % o.gifLen;
+    let i = o.gifIdx || 0;
+    if (t < o.cum[i]) i = 0;
+    while (i < fr.length - 1 && t >= o.cum[i + 1]) i++;
+    o.gifIdx = i;
+    return fr[i].c;
+  }
+
+  /** Maske über alle Einzelbilder: Was in irgendeinem Bild fest ist, ist fest.
+      Damit fliegt kein Ball durch etwas hindurch, das gerade zu sehen ist. */
+  function maskFromFrames(frames, maxDim) {
+    const w = frames[0].c.width, h = frames[0].c.height;
+    const k = maxDim / Math.max(w, h);
+    const gw = Math.max(8, Math.round(w * k)), gh = Math.max(8, Math.round(h * k));
+    const c = document.createElement('canvas');
+    c.width = gw; c.height = gh;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const alpha = new Uint8Array(gw * gh);
+    for (const f of frames) {
+      g.clearRect(0, 0, gw, gh);
+      g.drawImage(f.c, 0, 0, gw, gh);
+      const px = g.getImageData(0, 0, gw, gh).data;
+      for (let i = 0; i < alpha.length; i++) if (px[i * 4 + 3] > alpha[i]) alpha[i] = px[i * 4 + 3];
+    }
+    return maskFromAlpha(alpha, gw, gh);
+  }
+
+  /** Lädt eine Bildquelle und bereitet Einzelbilder und Kollisionsmaske vor. */
+  async function prepareImage(src) {
+    const img = new Image();
+    await new Promise((ok, fehler) => {
+      img.onload = ok;
+      img.onerror = () => fehler(new Error('Bild nicht lesbar'));
+      img.src = src;
+    });
+    let frames = null;
+    if (/^data:image\/gif/i.test(src)) {
+      try { frames = await decodeGif(dataUrlBytes(src)); } catch (e) { frames = null; }
+      if (!frames) gifHalter.appendChild(img);   // dann animiert es der Browser
+    }
+    let mask = null;
+    try { mask = frames ? maskFromFrames(frames, 96) : maskFromImage(img, 96); } catch (e) { mask = null; }
+    return { img, frames, mask };
+  }
+
   function maskFromImage(img, maxDim) {
     const iw = img.naturalWidth || img.width || 1;
     const ih = img.naturalHeight || img.height || 1;
@@ -1373,13 +1476,12 @@
       ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
 
     } else if (o.t === 'img') {
-      if (!o.img) return;
+      const bild = gifBild(o);
+      if (!bild) return;
       ctx.save();
       ctx.translate(o.x, o.y);
       ctx.rotate(o.a);
-      // Ein animiertes GIF zeigt hier den Einzelbild-Stand von jetzt – das
-      // Bild bewegt sich also mit, die Kollisionskante bleibt die vom Laden.
-      try { ctx.drawImage(o.img, -o.w / 2, -o.h / 2, o.w, o.h); } catch (e) { /* noch nicht geladen */ }
+      try { ctx.drawImage(bild, -o.w / 2, -o.h / 2, o.w, o.h); } catch (e) { /* noch nicht bereit */ }
       ctx.restore();
 
     } else {
@@ -2177,10 +2279,13 @@
       const img = pendingImg.img;
       const w = P.editSize * 2.4;
       const h = (w * (img.naturalHeight || 1)) / (img.naturalWidth || 1);
-      select(world.custom[world.custom.push({
+      const o = {
         t: 'img', x: p.x, y: p.y, w, h, a: 0, om: 0,
         src: pendingImg.src, img, mask: pendingImg.mask,
-      }) - 1]);
+      };
+      setFrames(o, pendingImg.frames);
+      world.custom.push(o);
+      select(o);
       return;
     }
     if (tool === 'erase') { const o = pick(p); if (o) removeObj(o); return; }
@@ -2256,20 +2361,17 @@
     edHint('Lese ' + file.name + ' …');
     const rd = new FileReader();
     rd.onerror = () => edHint('Die Datei ließ sich nicht lesen.');
-    rd.onload = () => {
-      const img = new Image();
-      img.onerror = () => edHint('Dieses Bild ließ sich nicht laden.');
-      img.onload = () => {
-        let mask = null;
-        try { mask = maskFromImage(img, 96); } catch (err) { mask = null; }
-        pendingImg = { img, src: rd.result, mask };
-        tool = 'img';
-        syncTools();
-        if (!editMode) setEdit(true);
-        edHint(file.name + ' bereit – jetzt ins Bild tippen.'
-          + (mask ? '' : ' (Ohne Alphakanal: Kollision als Rechteck.)'));
-      };
-      img.src = rd.result;
+    rd.onload = async () => {
+      let vor;
+      try { vor = await prepareImage(rd.result); }
+      catch (err) { edHint('Dieses Bild ließ sich nicht laden.'); return; }
+      pendingImg = { img: vor.img, src: rd.result, mask: vor.mask, frames: vor.frames };
+      tool = 'img';
+      syncTools();
+      if (!editMode) setEdit(true);
+      const zusatz = vor.frames ? ' · ' + vor.frames.length + ' Einzelbilder'
+        : (vor.mask ? '' : ' (ohne Alphakanal: Kollision als Rechteck)');
+      edHint(file.name + ' bereit' + zusatz + ' – jetzt ins Bild tippen.');
     };
     rd.readAsDataURL(file);
   }
@@ -2307,12 +2409,11 @@
         t: 'img', x: +roh.x, y: +roh.y, w: +roh.w, h: +roh.h,
         a: +roh.a || 0, om: +roh.om || 0, src: roh.src, img: null, mask: null,
       };
-      const img = new Image();
-      img.onload = () => {
-        o.img = img;
-        try { o.mask = maskFromImage(img, 96); } catch (err) { /* dann ohne Kollision */ }
-      };
-      img.src = roh.src;
+      prepareImage(roh.src).then((vor) => {
+        o.img = vor.img;
+        o.mask = vor.mask;
+        setFrames(o, vor.frames);
+      }).catch(() => { /* dann bleibt es unsichtbar und ohne Kollision */ });
       world.custom.push(o);
     } else if (roh.t === 'bar') {
       world.custom.push({
@@ -2358,7 +2459,7 @@
       + '<button type="button" class="btn" id="edClear">Leeren</button>'
       + '</div>'
       + '<label class="filebtn wide" id="edImgBtn" style="margin-top:8px">'
-      + 'Bild laden · PNG GIF JPG<input type="file"></label>'
+      + 'Bild laden · PNG · animiertes GIF · JPG<input type="file"></label>'
       + '<div class="row"><span class="status" id="edHint">Noch kein Bild geladen.</span></div>'
       + '<div class="row"><span class="status on" id="edCount">noch nichts gesetzt</span></div>'
       + '<div id="edSel" hidden>'

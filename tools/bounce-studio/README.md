@@ -156,9 +156,19 @@ Damit stimmt der Abprall auch an schrägen und ausgefransten Rändern, und ein
 Ball kann in eine Aussparung hineinfallen. Ein randvolles Bild ohne
 Alphakanal wirkt wie ein Rechteck.
 
-Ein **animiertes GIF** bewegt sich im Bild mit: Gezeichnet wird das Einzelbild
-von jetzt. Die Kollisionskante bleibt die vom Zeitpunkt des Ladens – ein
-Abstandsfeld je GIF-Frame wäre für die paar Prozent Genauigkeit zu teuer.
+**Animierte GIFs bleiben animiert.** Das ist weniger selbstverständlich, als
+es klingt: Ein `<img>`, das nicht im Dokument hängt, animiert in den meisten
+Browsern nicht – `drawImage` zeigt dann ewig das erste Bild. Wo es den
+`ImageDecoder` gibt (Chrome, Edge, neuere Firefox), zerlegt das Studio das GIF
+darum selbst in Einzelbilder und schaltet sie nach ihren eigenen Zeiten weiter;
+sonst hängt es das Bild unsichtbar ins Dokument, damit der Browser es
+weiterlaufen lässt. Beides landet unverändert in der Aufnahme.
+
+Die Kollision benutzt **eine Maske über alle Einzelbilder**: Was in irgendeinem
+Bild fest ist, ist fest. Damit fliegt kein Ball durch etwas hindurch, das gerade
+zu sehen ist; dafür ist die Kante bei stark wandernden Motiven etwas großzügig.
+Ein Abstandsfeld je Einzelbild wäre genauer, kostet aber Speicher ohne
+sichtbaren Gewinn.
 
 **Level sichern** schreibt eine JSON-Datei mit allen Hindernissen; Bilder
 stecken als Data-URL darin, die Datei ist also für sich vollständig.
@@ -184,7 +194,12 @@ nicht im Video landen.
   anderen steckt und dass der Auslöser „Nur bei Ballkontakt" greift. Für den
   Editor: dass das Abstandsfeld eines Kreisbildes mit der Geometrie
   übereinstimmt, dass Bälle daran abprallen, dass eigene Hindernisse den
-  Neustart überstehen und dass mehrere Startbälle nebeneinander liegen.
+  Neustart überstehen, dass mehrere Startbälle nebeneinander liegen und dass
+  GIF-Einzelbilder nach ihren eigenen Zeiten weiterlaufen.
+
+Das GIF-Zerlegen selbst braucht einen echten Browser (`ImageDecoder`) und
+steckt deshalb nicht im Node-Test; es wurde über das DevTools-Protokoll in
+Chromium geprüft: drei Einzelbilder, 80 ms je Bild, alle drei werden gezeigt.
 - `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
   gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
   Status, RIFF-Vorspann, unbekannte Chunks, Tempowechsel, Format 2,

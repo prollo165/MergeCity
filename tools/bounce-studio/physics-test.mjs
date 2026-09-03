@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { laden, laufen, abstaende, median } from './harness.mjs';
+import { laden, laufen, abstaende, median, clock } from './harness.mjs';
 
 const engine = await laden();
 const { world, P, mel } = engine;
@@ -260,4 +260,23 @@ test('mehrere Startbälle stehen nebeneinander im Bild', () => {
   for (const b of world.balls) {
     assert.ok(Math.hypot(b.x - 540, b.y - 1000) < world.Rbase, 'Startball außerhalb der Form');
   }
+});
+
+test('GIF-Einzelbilder laufen nach ihren eigenen Zeiten weiter', () => {
+  const o = { t: 'img', x: 0, y: 0, w: 10, h: 10, a: 0, om: 0 };
+  engine.setFrames(o, [{ c: 'a', dt: 0.1 }, { c: 'b', dt: 0.2 }, { c: 'c', dt: 0.1 }]);
+  assert.ok(Math.abs(o.gifLen - 0.4) < 1e-9, 'Gesamtdauer ' + o.gifLen);
+
+  const merker = clock.t;
+  for (const [t, soll] of [[0, 'a'], [0.05, 'a'], [0.12, 'b'], [0.29, 'b'],
+                           [0.35, 'c'], [0.45, 'a'], [0.75, 'c'], [0.8, 'a']]) {
+    clock.t = t;
+    assert.equal(engine.gifBild(o), soll, 'bei ' + t + 's');
+  }
+  clock.t = merker;
+
+  // Ein einzelnes Bild bleibt ein einzelnes Bild.
+  const still = { t: 'img', img: 'nur eins' };
+  engine.setFrames(still, null);
+  assert.equal(engine.gifBild(still), 'nur eins');
 });
