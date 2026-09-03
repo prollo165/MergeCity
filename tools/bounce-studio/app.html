@@ -1,0 +1,1537 @@
+<title>Prallwerk 9:16</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Prallwerk ist bewusst einfarbig dunkel gehalten: Man beurteilt ein
+     Videobild gegen dunkles Gehäuse, nicht gegen weißes Papier. Alle Farben
+     werden darum explizit gesetzt, damit die Seite auf jedem Wirtsgrund hält. */
+  :root {
+    color-scheme: dark;
+    --ink: #0e0d0b;
+    --chassis: #171612;
+    --raised: #211f19;
+    --raised-hi: #2a2721;
+    --rule: #38332a;
+    --rule-soft: #26231d;
+    --silk: #f0eadd;
+    --dim: #968d7e;
+    --dimmer: #6b6459;
+    --signal: #e8a33d;
+    --signal-soft: rgba(232, 163, 61, .18);
+    --signal-ink: #1a1408;
+    --tally: #e5484d;
+    --cool: #6f8fa8;
+    --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+    --font-display: "Archivo Black", "Arial Black", Impact, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ink);
+    color: var(--silk);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { max-width: 1020px; margin: 0 auto; padding: 20px 22px 44px; }
+
+  /* ---------- Kopf ---------- */
+  .hdr { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+  .bank {
+    display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+    padding: 12px 0 13px; border-bottom: 1px solid var(--rule);
+  }
+  .bank-label {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--dimmer);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .wordmark {
+    font-family: var(--font-display); font-size: 25px; line-height: 1;
+    letter-spacing: -.015em; text-transform: uppercase; color: var(--silk);
+  }
+  .wordmark span { color: var(--signal); }
+  .badge {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em;
+    color: var(--cool); border: 1px solid rgba(111, 143, 168, .45);
+    border-radius: 4px; padding: 2px 6px; align-self: center;
+  }
+  .tagline {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  .presets { display: flex; gap: 7px; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim); background: transparent;
+    border: 1px solid var(--rule); border-radius: 999px; padding: 6px 11px;
+    cursor: pointer; transition: color .12s, border-color .12s, background .12s;
+  }
+  .chip:hover { color: var(--silk); border-color: var(--dimmer); }
+  .chip[aria-pressed="true"] { color: var(--signal-ink); background: var(--signal); border-color: var(--signal); }
+
+  /* ---------- Konsole ---------- */
+  .console {
+    display: grid; grid-template-columns: minmax(0, 1fr) 356px;
+    gap: 26px; align-items: start; margin-top: 20px;
+  }
+  @media (max-width: 1000px) { .console { grid-template-columns: 1fr; } }
+
+  /* ---------- Bühne ---------- */
+  .stage {
+    /* Die Bühne wird von der Höhe her gedacht – ein 9:16-Bild soll ganz
+       ins Fenster passen, die Blende folgt dieser Breite. */
+    --screen-w: calc(min(76vh, 860px) * 9 / 16);
+    display: flex; flex-direction: column; gap: 12px; align-items: center;
+  }
+  @media (max-width: 1000px) { .stage { --screen-w: min(420px, 100%); } }
+  .tallybar {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    max-width: var(--screen-w); font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--dimmer);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #3a2b28; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .6);
+  }
+  .lamp.live { background: var(--tally); box-shadow: 0 0 10px 1px rgba(229, 72, 77, .8); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .tallybar .sep { margin-left: auto; }
+
+  .bezel {
+    position: relative; padding: 11px; border-radius: 12px;
+    background: linear-gradient(180deg, var(--raised-hi), var(--chassis));
+    border: 1px solid var(--rule);
+    box-shadow: 0 22px 44px -26px #000, inset 0 1px 0 rgba(255, 255, 255, .04);
+    width: var(--screen-w); max-width: 100%;
+  }
+  .screen {
+    position: relative; border-radius: 5px; overflow: hidden; background: #05060a;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .8);
+  }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 9 / 16; }
+  .mark { position: absolute; width: 15px; height: 15px; border: 1.5px solid rgba(111, 143, 168, .55); pointer-events: none; }
+  .mark.tl { top: 5px; left: 5px; border-right: 0; border-bottom: 0; }
+  .mark.tr { top: 5px; right: 5px; border-left: 0; border-bottom: 0; }
+  .mark.bl { bottom: 5px; left: 5px; border-right: 0; border-top: 0; }
+  .mark.br { bottom: 5px; right: 5px; border-left: 0; border-top: 0; }
+
+  /* ---------- Messwerte ---------- */
+  .readout {
+    display: grid; grid-template-columns: repeat(5, 1fr); width: var(--screen-w);
+    max-width: 100%; border: 1px solid var(--rule); border-radius: 8px;
+    background: var(--chassis); overflow: hidden;
+  }
+  .readout div { padding: 8px 10px; border-left: 1px solid var(--rule-soft); }
+  .readout div:first-child { border-left: 0; }
+  .readout dt {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--dimmer); margin: 0;
+  }
+  .readout dd {
+    margin: 1px 0 0; font-family: var(--font-mono); font-size: 15px;
+    font-variant-numeric: tabular-nums; color: var(--silk);
+  }
+  .readout dd.acc { color: var(--signal); }
+
+  .transport { display: flex; gap: 8px; flex-wrap: wrap; width: var(--screen-w); max-width: 100%; }
+  .transport .grow { flex: 1 1 auto; }
+
+  /* ---------- Bedienschiene ---------- */
+  .rail { border: 1px solid var(--rule); border-radius: 10px; background: var(--chassis); }
+  .mod { padding: 13px 15px 15px; border-top: 1px solid var(--rule-soft); }
+  .mod:first-child { border-top: 0; }
+  .mod > h2 {
+    display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: .2em; text-transform: uppercase; color: var(--dim);
+  }
+  .mod > h2 .hint {
+    margin-left: auto; letter-spacing: .04em; text-transform: none;
+    color: var(--dimmer); font-size: 10.5px;
+  }
+
+  .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; padding: 5px 0; }
+  .row > label { font-size: 12.5px; color: var(--silk); }
+  .row .val {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--signal);
+    font-variant-numeric: tabular-nums;
+  }
+  .row .wide { grid-column: 1 / -1; }
+  .row .note { grid-column: 1 / -1; font-size: 11px; color: var(--dimmer); }
+
+  select, input[type="text"], input[type="number"] {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--silk);
+    background: var(--raised); border: 1px solid var(--rule); border-radius: 5px;
+    padding: 6px 8px; width: 100%; min-width: 0;
+  }
+  select { cursor: pointer; }
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%;
+    background: transparent; height: 20px; margin: 0; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--rule); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 13px; height: 13px;
+    margin-top: -5px; border-radius: 50%; background: var(--signal);
+    border: 2px solid var(--ink); box-shadow: 0 0 0 1px var(--signal);
+  }
+  input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--rule); }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--signal);
+    border: 2px solid var(--ink); box-shadow: 0 0 0 1px var(--signal);
+  }
+
+  .sw {
+    -webkit-appearance: none; appearance: none; width: 36px; height: 19px;
+    border-radius: 11px; background: var(--raised); border: 1px solid var(--rule);
+    position: relative; cursor: pointer; transition: background .14s, border-color .14s;
+  }
+  .sw::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--dim); transition: transform .14s, background .14s;
+  }
+  .sw:checked { background: var(--signal-soft); border-color: var(--signal); }
+  .sw:checked::after { transform: translateX(17px); background: var(--signal); }
+
+  .btn {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; padding: 9px 13px; border-radius: 6px;
+    border: 1px solid var(--rule); background: var(--raised); color: var(--silk);
+    cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+  }
+  .btn:hover:not(:disabled) { background: var(--raised-hi); border-color: var(--dimmer); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); font-weight: 500; }
+  .btn.primary:hover:not(:disabled) { background: #f0b055; border-color: #f0b055; }
+  .btn.rec { background: var(--tally); border-color: var(--tally); color: #fff; }
+  .btn.rec:hover:not(:disabled) { background: #ef5a5f; border-color: #ef5a5f; }
+
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  .export-out {
+    margin-top: 10px; padding: 10px 11px; border: 1px solid var(--rule);
+    border-left: 2px solid var(--signal); border-radius: 6px; background: var(--raised);
+    display: grid; gap: 8px;
+  }
+  .export-out p { margin: 0; font-family: var(--font-mono); font-size: 11px; color: var(--dim); }
+  .export-out strong { color: var(--silk); font-weight: 500; }
+  .export-out.warn { border-left-color: var(--tally); }
+
+  footer {
+    margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--rule);
+    display: flex; gap: 10px 26px; flex-wrap: wrap;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--dimmer);
+  }
+  footer kbd {
+    font-family: var(--font-mono); color: var(--silk); background: var(--raised);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 1px 5px; font-size: 10px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0s !important; animation: none !important; }
+  }
+</style>
+
+<div class="shell">
+  <header class="hdr">
+    <div class="brand">
+      <div class="wordmark">Prall<span>werk</span></div>
+      <div class="badge">9:16</div>
+    </div>
+    <p class="tagline">Bounce-Physik für Kurzvideos</p>
+  </header>
+
+  <div class="bank">
+    <span class="bank-label">Vorlagen</span>
+    <div class="presets" id="presets" role="group" aria-label="Voreinstellungen"></div>
+  </div>
+
+  <main class="console">
+    <section class="stage" aria-label="Bühne">
+      <div class="tallybar">
+        <span class="lamp" id="lamp"></span>
+        <span id="tallyText">Bereit</span>
+        <span class="sep" id="recSize"></span>
+      </div>
+
+      <div class="bezel">
+        <div class="screen">
+          <canvas id="stage" width="720" height="1280"></canvas>
+          <span class="mark tl"></span><span class="mark tr"></span>
+          <span class="mark bl"></span><span class="mark br"></span>
+        </div>
+      </div>
+
+      <dl class="readout">
+        <div><dt>Bälle</dt><dd class="acc" id="mBalls">1</dd></div>
+        <div><dt>Treffer</dt><dd id="mHits">0</dd></div>
+        <div><dt>Lauf</dt><dd id="mTime">0.0s</dd></div>
+        <div><dt>Bild/s</dt><dd id="mFps">60</dd></div>
+        <div><dt>Seed</dt><dd id="mSeed">0000</dd></div>
+      </dl>
+
+      <div class="transport">
+        <button class="btn primary grow" id="btnPlay">Pause</button>
+        <button class="btn" id="btnReset">Neustart</button>
+        <button class="btn" id="btnSeed">Neuer Seed</button>
+        <button class="btn rec grow" id="btnRec">Aufnahme</button>
+      </div>
+    </section>
+
+    <section class="rail" id="rail" aria-label="Bedienelemente"></section>
+  </main>
+
+  <footer>
+    <span><kbd>Leer</kbd> Start / Pause</span>
+    <span><kbd>R</kbd> Neustart</span>
+    <span><kbd>N</kbd> Neuer Seed</span>
+    <span>Bälle durchdringen sich – wie im Original.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* =====================================================================
+     Prallwerk – 2D-Physikstudio für vertikale Bounce-Clips.
+     Weltkoordinaten sind immer 1080 x 1920; die Leinwand wird nur skaliert.
+     ===================================================================== */
+
+  const W = 1080, H = 1920;
+  const SUB = 4;              // Substeps je Simulationsschritt
+  const STEP = 1 / 60;        // fester Zeitschritt (deterministisch)
+  const DT = STEP / SUB;
+  const CX = 540, CY = 1000;  // Mittelpunkt der Form
+  const TAU = Math.PI * 2;
+
+  /* ---------------------------------------------------------------- Parameter */
+  const P = {
+    shape: 'circle', size: 0.86, spin: 0, wall: 14,
+    barrier: 'rings', bCount: 3, bSpeed: 55,
+    gravity: 2400, bounce: 1.0, ballSize: 26, startSpeed: 850,
+    slide: 1.0, tempo: 1,
+    split: 'chance', splitChance: 18, maxBalls: 180, shrink: true, spread: 30,
+    palette: 'neon', colorMode: 'hit', trail: 55, glow: true, sparks: true,
+    shake: true, bg: 'studio',
+    hud: true, hudTitle: 'WIE VIELE WERDEN ES?', target: 180,
+    sound: true, scale: 'penta', volume: 45,
+    outRes: 720, bitrate: 4, recLimit: 15,
+  };
+
+  /* ---------------------------------------------------------------- Paletten */
+  const PALETTES = {
+    neon:   ['#22d3ee', '#a855f7', '#f472b6', '#facc15', '#4ade80', '#fb7185'],
+    candy:  ['#ff8fab', '#ffb3c6', '#ffd166', '#8bd3dd', '#c8b6ff', '#ffe066'],
+    sunset: ['#ff9e00', '#ff6d00', '#ff4d6d', '#c9184a', '#7b2cbf', '#ffd60a'],
+    ice:    ['#e0fbfc', '#98c1d9', '#3d5a80', '#8ecae6', '#48cae4', '#caf0f8'],
+    lava:   ['#ffba08', '#faa307', '#f48c06', '#e85d04', '#dc2f02', '#9d0208'],
+    brass:  ['#e8a33d', '#f0c26b', '#c98a2e', '#f5e1b4', '#a86f22', '#ffd89b'],
+  };
+
+  /* ---------------------------------------------------------------- Zufall */
+  let seed = 1234, rnd = mulberry(seed);
+  function mulberry(a) {
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rrange = (lo, hi) => lo + rnd() * (hi - lo);
+
+  /* ---------------------------------------------------------------- Formen
+     Jede Form ist ein geschlossenes Polygon aus Einheitsvektoren (Radius 1)
+     oder – beim Kreis – exakte Analytik ohne Facetten. */
+  function reg(n, rot = 0) {
+    const v = [];
+    for (let i = 0; i < n; i++) {
+      const a = rot + (i / n) * TAU;
+      v.push({ x: Math.cos(a), y: Math.sin(a) });
+    }
+    return v;
+  }
+  function star(n, inner, rot = -Math.PI / 2) {
+    const v = [];
+    for (let i = 0; i < n * 2; i++) {
+      const a = rot + (i / (n * 2)) * TAU;
+      const r = i % 2 ? inner : 1;
+      v.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+    }
+    return v;
+  }
+  function superell(p, steps = 56) {
+    const v = [];
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * TAU, c = Math.cos(a), s = Math.sin(a), e = 2 / p;
+      v.push({ x: Math.sign(c) * Math.abs(c) ** e, y: Math.sign(s) * Math.abs(s) ** e });
+    }
+    return v;
+  }
+  function heart(steps = 56) {
+    const v = [];
+    for (let i = 0; i < steps; i++) {
+      const t = (i / steps) * TAU;
+      const x = 16 * Math.sin(t) ** 3;
+      const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+      v.push({ x: x / 17, y: y / 17 });
+    }
+    return v;
+  }
+  /** Kapsel: zwei Halbkreiskappen (Radius a) um (0, ±(1-a)), dazwischen Geraden. */
+  function stadium(steps = 40) {
+    const v = [], a = 0.6, off = 1 - a, half = steps / 2;
+    for (let i = 0; i <= half; i++) {
+      const t = (i / half) * Math.PI;
+      v.push({ x: Math.cos(t) * a, y: off + Math.sin(t) * a });
+    }
+    for (let i = 0; i <= half; i++) {
+      const t = Math.PI + (i / half) * Math.PI;
+      v.push({ x: Math.cos(t) * a, y: -off + Math.sin(t) * a });
+    }
+    return v;
+  }
+
+  const SHAPES = {
+    circle:  { name: 'Kreis', unit: null },
+    squircle:{ name: 'Weiches Quadrat', unit: superell(4) },
+    square:  { name: 'Quadrat', unit: reg(4, Math.PI / 4) },
+    tri:     { name: 'Dreieck', unit: reg(3, -Math.PI / 2) },
+    penta:   { name: 'Fünfeck', unit: reg(5, -Math.PI / 2) },
+    hexa:    { name: 'Sechseck', unit: reg(6, -Math.PI / 2) },
+    octa:    { name: 'Achteck', unit: reg(8, Math.PI / 8) },
+    star5:   { name: 'Stern (5)', unit: star(5, 0.46) },
+    star6:   { name: 'Stern (6)', unit: star(6, 0.56) },
+    stadium: { name: 'Kapsel', unit: stadium() },
+    heart:   { name: 'Herz', unit: heart() },
+  };
+
+  /* ---------------------------------------------------------------- Welt */
+  const world = {
+    kind: 'circle', R: 470, angle: 0, om: 0,
+    verts: [], norms: [], inR: 470,
+    barriers: [], balls: [], sparks: [], ripples: [],
+    hits: 0, time: 0, flash: 0, shake: 0, running: true,
+  };
+
+  function buildShape() {
+    const def = SHAPES[P.shape] || SHAPES.circle;
+    world.R = 0.5 * W * P.size;
+    world.om = (P.spin * Math.PI) / 180;
+    world.kind = def.unit ? 'poly' : 'circle';
+    world.unit = def.unit;
+    updateShape();
+    world.inR = world.kind === 'circle' ? world.R : minEdgeDist();
+  }
+
+  /** Dreht die Einheitspunkte auf die aktuelle Lage und legt Außennormalen an. */
+  function updateShape() {
+    if (world.kind !== 'poly') return;
+    const u = world.unit, n = u.length, R = world.R;
+    const ca = Math.cos(world.angle), sa = Math.sin(world.angle);
+    const v = world.verts.length === n ? world.verts : (world.verts = Array.from({ length: n }, () => ({ x: 0, y: 0 })));
+    for (let i = 0; i < n; i++) {
+      v[i].x = CX + (u[i].x * ca - u[i].y * sa) * R;
+      v[i].y = CY + (u[i].x * sa + u[i].y * ca) * R;
+    }
+    const nm = world.norms.length === n ? world.norms : (world.norms = Array.from({ length: n }, () => ({ x: 0, y: 0 })));
+    for (let i = 0; i < n; i++) {
+      const a = v[i], b = v[(i + 1) % n];
+      let nx = b.y - a.y, ny = -(b.x - a.x);
+      const l = Math.hypot(nx, ny) || 1;
+      nx /= l; ny /= l;
+      // Außen ist die Seite, die vom Mittelpunkt wegzeigt.
+      if (nx * ((a.x + b.x) / 2 - CX) + ny * ((a.y + b.y) / 2 - CY) < 0) { nx = -nx; ny = -ny; }
+      nm[i].x = nx; nm[i].y = ny;
+    }
+  }
+
+  function minEdgeDist() {
+    let m = Infinity;
+    const v = world.verts, n = v.length;
+    for (let i = 0; i < n; i++) {
+      const q = closestOnSeg(CX, CY, v[i], v[(i + 1) % n]);
+      m = Math.min(m, Math.hypot(q.x - CX, q.y - CY));
+    }
+    return m;
+  }
+
+  const _q = { x: 0, y: 0, t: 0 };
+  function closestOnSeg(px, py, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    _q.x = a.x + dx * t; _q.y = a.y + dy * t; _q.t = t;
+    return _q;
+  }
+
+  /** Vorzeichenbehafteter Abstand zur Wand: negativ = innen. */
+  function wallDist(px, py) {
+    if (world.kind === 'circle') return Math.hypot(px - CX, py - CY) - world.R;
+    const v = world.verts, n = v.length;
+    let best = Infinity, bi = 0, bx = 0, by = 0;
+    for (let i = 0; i < n; i++) {
+      const q = closestOnSeg(px, py, v[i], v[(i + 1) % n]);
+      const d = (px - q.x) ** 2 + (py - q.y) ** 2;
+      if (d < best) { best = d; bi = i; bx = q.x; by = q.y; }
+    }
+    const nm = world.norms[bi];
+    const side = (px - bx) * nm.x + (py - by) * nm.y;
+    return side >= 0 ? Math.sqrt(best) : -Math.sqrt(best);
+  }
+  const insideBy = (x, y, m) => wallDist(x, y) < -m;
+
+  /* ---------------------------------------------------------------- Barrieren */
+  const BARRIERS = {
+    none:    'Keine',
+    rings:   'Ringe mit Lücke',
+    pegs:    'Pegs (Plinko)',
+    bars:    'Rotierende Balken',
+    spinner: 'Kreuz-Spinner',
+    zigzag:  'Zickzack',
+    orbit:   'Orbit-Kugeln',
+    mix:     'Kombi',
+  };
+
+  /** Freie Breite der Form auf Höhe y (mit Sicherheitsabstand für den Ball). */
+  function chord(y) {
+    const m = P.ballSize + 18;
+    let half = 0;
+    for (let x = 8; x < W / 2; x += 8) {
+      if (insideBy(CX + x, y, m) && insideBy(CX - x, y, m)) half = x; else break;
+    }
+    return half * 2;
+  }
+
+  function buildBarriers() {
+    const B = world.barriers = [];
+    const inR = world.inR;
+    const om = (P.bSpeed * Math.PI) / 180;
+    const n = Math.max(1, P.bCount | 0);
+    const add = (o) => B.push(o);
+
+    switch (P.barrier) {
+      case 'rings':
+        for (let i = 0; i < n; i++) {
+          const r = (inR * (i + 1)) / (n + 1);
+          if (r < P.ballSize * 1.7) continue;
+          add({ t: 'arc', r, h: 10, span: TAU - 0.95 - i * 0.1, a: i * 1.7, om: om * (i % 2 ? -1 : 0.8) });
+        }
+        break;
+
+      case 'pegs': {
+        const rows = n + 2, pr = 15, gap = 118;
+        for (let ry = 0; ry < rows; ry++) {
+          const y = CY - inR * 0.72 + (ry / Math.max(1, rows - 1)) * inR * 1.44;
+          for (let c = -4; c <= 4; c++) {
+            const x = CX + c * gap + (ry % 2 ? gap / 2 : 0);
+            if (insideBy(x, y, pr + P.ballSize + 12)) add({ t: 'peg', x, y, r: pr, om: 0 });
+          }
+        }
+        break;
+      }
+
+      case 'bars':
+        for (let i = 0; i < n; i++) {
+          const y = CY + inR * (n === 1 ? 0 : -0.6 + (1.2 * i) / (n - 1));
+          const len = chord(y) * 0.78;
+          if (len > 90) add({ t: 'bar', cx: CX, cy: y, len, h: 11, a: i * 0.7, om: om * (i % 2 ? -1 : 1) });
+        }
+        break;
+
+      case 'spinner':
+        for (let i = 0; i < Math.max(2, n); i++) {
+          add({ t: 'bar', cx: CX, cy: CY, len: inR * 1.45, h: 12, a: (i * Math.PI) / Math.max(2, n), om });
+        }
+        break;
+
+      case 'zigzag':
+        for (let i = 0; i <= n; i++) {
+          const y = CY - inR * 0.7 + (i / Math.max(1, n)) * inR * 1.4;
+          const w = chord(y);
+          const len = w * 0.62;
+          if (len < 90) continue;
+          const dir = i % 2 ? 1 : -1;
+          add({ t: 'bar', cx: CX + dir * w * 0.16, cy: y, len, h: 10, a: dir * 0.3, om: 0 });
+        }
+        break;
+
+      case 'orbit': {
+        const k = Math.max(2, n + 1), orbitR = inR * 0.62;
+        for (let i = 0; i < k; i++) {
+          add({ t: 'peg', x: CX, y: CY, r: 30, om, orbitR, phase: (i * TAU) / k });
+        }
+        break;
+      }
+
+      case 'mix':
+        add({ t: 'arc', r: inR * 0.8, h: 10, span: TAU - 1.1, a: 0, om });
+        add({ t: 'arc', r: inR * 0.52, h: 10, span: TAU - 1.1, a: 2, om: -om * 0.8 });
+        for (let i = 0; i < 2; i++) {
+          add({ t: 'bar', cx: CX, cy: CY, len: inR * 0.6, h: 12, a: (i * Math.PI) / 2, om: om * 1.5 });
+        }
+        break;
+    }
+    // Orbit-Pegs sofort auf ihre Bahn setzen.
+    updateBarriers(0);
+  }
+
+  function updateBarriers(dt) {
+    for (const o of world.barriers) {
+      if (!o.om) continue;
+      if (o.orbitR !== undefined) {
+        o.phase += o.om * dt;
+        o.x = CX + Math.cos(o.phase) * o.orbitR;
+        o.y = CY + Math.sin(o.phase) * o.orbitR;
+      } else {
+        o.a += o.om * dt;
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- Bälle */
+  function spawn(x, y, vx, vy, r, ci, hue) {
+    return { x, y, vx, vy, r, ci, hue, hits: 0, cool: 0 };
+  }
+
+  function colorOf(b) {
+    const pal = PALETTES[P.palette] || PALETTES.neon;
+    if (P.colorMode === 'flow') {
+      const h = Math.round(((world.time * 70 + b.hue) % 360) / 12) * 12;
+      return 'hsl(' + h + ' 92% 62%)';
+    }
+    return pal[Math.abs(b.ci) % pal.length];
+  }
+
+  function reset() {
+    rnd = mulberry(seed);
+    buildShape();
+    buildBarriers();
+    world.balls.length = 0;
+    world.sparks.length = 0;
+    world.ripples.length = 0;
+    world.hits = 0; world.time = 0; world.flash = 0; world.shake = 0; world.angle = 0;
+    if (world.kind === 'poly') updateShape();
+    const a = -Math.PI / 2 + rrange(-0.75, 0.75);
+    world.balls.push(spawn(
+      CX + rrange(-40, 40), CY - world.inR * 0.45,
+      Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
+      P.ballSize, 0, rnd() * 360,
+    ));
+    paintBackground();
+    updateReadout();
+  }
+
+  /* ---------------------------------------------------------------- Physik */
+  const A = { x: 0, y: 0 }, Bp = { x: 0, y: 0 };
+  const MAXV = 4200;
+
+  function substep(dt) {
+    if (world.om) { world.angle += world.om * dt; updateShape(); }
+    updateBarriers(dt);
+    const balls = world.balls, g = P.gravity;
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      b.vy += g * dt;
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > MAXV) { b.vx = (b.vx / sp) * MAXV; b.vy = (b.vy / sp) * MAXV; }
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      if (b.cool > 0) b.cool -= dt;
+      collideWall(b);
+      collideBarriers(b);
+    }
+    world.time += dt;
+    if (world.flash > 0) world.flash = Math.max(0, world.flash - dt * 4.5);
+    if (world.shake > 0) world.shake = Math.max(0, world.shake - dt * 3.2);
+    stepEffects(dt);
+  }
+
+  /** Prallt den Ball an einer Fläche ab – optional mit Oberflächengeschwindigkeit. */
+  function bounce(b, nx, ny, sx, sy) {
+    const ux = b.vx - sx, uy = b.vy - sy;
+    const vn = ux * nx + uy * ny;
+    const tx = -ny, ty = nx;
+    const vt = ux * tx + uy * ty;
+    const nvn = Math.abs(vn) * P.bounce;   // stets von der Fläche weg
+    const nvt = vt * P.slide;
+    b.vx = nx * nvn + tx * nvt + sx;
+    b.vy = ny * nvn + ty * nvt + sy;
+  }
+
+  function collideWall(b) {
+    if (world.kind === 'circle') {
+      const dx = b.x - CX, dy = b.y - CY;
+      const d = Math.hypot(dx, dy) || 1e-6;
+      const lim = world.R - b.r;
+      if (d <= lim) return;
+      const ux = dx / d, uy = dy / d;
+      b.x = CX + ux * lim; b.y = CY + uy * lim;
+      const sx = -world.om * (b.y - CY), sy = world.om * (b.x - CX);
+      bounce(b, -ux, -uy, sx, sy);
+      onHit(b, CX + ux * world.R, CY + uy * world.R, 'wall');
+      return;
+    }
+    const v = world.verts, n = v.length;
+    let best = Infinity, bi = 0, bx = 0, by = 0;
+    for (let i = 0; i < n; i++) {
+      const q = closestOnSeg(b.x, b.y, v[i], v[(i + 1) % n]);
+      const d = (b.x - q.x) ** 2 + (b.y - q.y) ** 2;
+      if (d < best) { best = d; bi = i; bx = q.x; by = q.y; }
+    }
+    const nm = world.norms[bi];
+    const outside = (b.x - bx) * nm.x + (b.y - by) * nm.y >= 0;
+    if (!outside && Math.sqrt(best) >= b.r) return;
+    const nx = -nm.x, ny = -nm.y;            // Normale zeigt nach innen
+    b.x = bx + nx * b.r; b.y = by + ny * b.r;
+    const sx = -world.om * (by - CY), sy = world.om * (bx - CX);
+    bounce(b, nx, ny, sx, sy);
+    onHit(b, bx, by, 'wall');
+  }
+
+  function collideBarriers(b) {
+    const list = world.barriers;
+    for (let k = 0; k < list.length; k++) {
+      const o = list[k];
+
+      if (o.t === 'peg') {
+        const dx = b.x - o.x, dy = b.y - o.y, rr = b.r + o.r;
+        const d = Math.hypot(dx, dy);
+        if (d >= rr || d < 1e-6) continue;
+        const nx = dx / d, ny = dy / d;
+        b.x = o.x + nx * rr; b.y = o.y + ny * rr;
+        const sx = o.orbitR ? -o.om * (o.y - CY) : 0;
+        const sy = o.orbitR ? o.om * (o.x - CX) : 0;
+        bounce(b, nx, ny, sx, sy);
+        onHit(b, o.x + nx * o.r, o.y + ny * o.r, 'barrier');
+
+      } else if (o.t === 'bar') {
+        const c = Math.cos(o.a), s = Math.sin(o.a);
+        const hx = (c * o.len) / 2, hy = (s * o.len) / 2;
+        A.x = o.cx - hx; A.y = o.cy - hy;
+        Bp.x = o.cx + hx; Bp.y = o.cy + hy;
+        const q = closestOnSeg(b.x, b.y, A, Bp);
+        const qx = q.x, qy = q.y;
+        let dx = b.x - qx, dy = b.y - qy;
+        let d = Math.hypot(dx, dy);
+        const rr = b.r + o.h;
+        if (d >= rr) continue;
+        if (d < 1e-6) { dx = -s; dy = c; d = 1; }
+        const nx = dx / d, ny = dy / d;
+        b.x = qx + nx * rr; b.y = qy + ny * rr;
+        const sx = o.om ? -o.om * (qy - o.cy) : 0;
+        const sy = o.om ? o.om * (qx - o.cx) : 0;
+        bounce(b, nx, ny, sx, sy);
+        onHit(b, qx, qy, 'barrier');
+
+      } else {
+        // Bogen: radiale Kollision innerhalb der Winkelspanne …
+        const dx = b.x - CX, dy = b.y - CY;
+        const d = Math.hypot(dx, dy) || 1e-6;
+        const rr = b.r + o.h;
+        let done = false;
+        if (Math.abs(d - o.r) < rr) {
+          let th = Math.atan2(dy, dx) - o.a;
+          th = ((th % TAU) + TAU) % TAU;
+          if (th <= o.span) {
+            const out = d > o.r ? 1 : -1;
+            const ux = dx / d, uy = dy / d;
+            b.x = CX + ux * (o.r + out * rr);
+            b.y = CY + uy * (o.r + out * rr);
+            bounce(b, ux * out, uy * out, -o.om * (b.y - CY), o.om * (b.x - CX));
+            onHit(b, CX + ux * o.r, CY + uy * o.r, 'barrier');
+            done = true;
+          }
+        }
+        // … und die beiden Kappen an der Lücke, damit dort nichts durchrutscht.
+        if (!done) {
+          for (let e = 0; e < 2; e++) {
+            const ea = o.a + (e ? o.span : 0);
+            const ex = CX + Math.cos(ea) * o.r, ey = CY + Math.sin(ea) * o.r;
+            const ddx = b.x - ex, ddy = b.y - ey, rr2 = b.r + o.h;
+            const dd = Math.hypot(ddx, ddy);
+            if (dd >= rr2 || dd < 1e-6) continue;
+            const nx = ddx / dd, ny = ddy / dd;
+            b.x = ex + nx * rr2; b.y = ey + ny * rr2;
+            bounce(b, nx, ny, -o.om * (ey - CY), o.om * (ex - CX));
+            onHit(b, ex, ey, 'barrier');
+          }
+        }
+      }
+    }
+  }
+
+  function onHit(b, x, y, kind) {
+    world.hits++;
+    b.hits++;
+    if (P.colorMode === 'hit') b.ci++;
+    world.flash = 1;
+    if (P.shake) world.shake = Math.min(1, world.shake + 0.3);
+    if (P.sparks) addSparks(x, y, colorOf(b));
+    addRipple(x, y);
+    playNote(b);
+    maybeSplit(b, kind);
+  }
+
+  function maybeSplit(b, kind) {
+    if (P.split === 'off' || b.cool > 0) return;
+    if (world.balls.length >= P.maxBalls) return;
+    if (P.split === 'barrier' && kind !== 'barrier') return;
+    if (P.split !== 'always' && rnd() * 100 >= P.splitChance) return;
+
+    const sp = Math.hypot(b.vx, b.vy) || P.startSpeed;
+    const ang = Math.atan2(b.vy, b.vx);
+    const half = ((P.spread * Math.PI) / 180) / 2;
+    const nr = P.shrink ? Math.max(7, b.r * 0.94) : b.r;
+
+    b.r = nr;
+    b.cool = 0.06;
+    b.vx = Math.cos(ang - half) * sp;
+    b.vy = Math.sin(ang - half) * sp;
+
+    const c = spawn(b.x, b.y, Math.cos(ang + half) * sp, Math.sin(ang + half) * sp,
+                    nr, P.colorMode === 'hit' ? b.ci : b.ci + 1, (b.hue + 37) % 360);
+    c.cool = 0.06;
+    c.hits = b.hits;
+    world.balls.push(c);
+  }
+
+  /* ---------------------------------------------------------------- Effekte */
+  function addSparks(x, y, col) {
+    if (world.sparks.length > 340) return;
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * TAU, sp = 200 + Math.random() * 520;
+      world.sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, col });
+    }
+  }
+  function addRipple(x, y) {
+    if (world.ripples.length < 36) world.ripples.push({ x, y, life: 1 });
+  }
+  function stepEffects(dt) {
+    const s = world.sparks;
+    for (let i = s.length - 1; i >= 0; i--) {
+      const p = s[i];
+      p.life -= dt * 2.2;
+      if (p.life <= 0) { s.splice(i, 1); continue; }
+      p.vy += 1200 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    const r = world.ripples;
+    for (let i = r.length - 1; i >= 0; i--) {
+      r[i].life -= dt * 2.6;
+      if (r[i].life <= 0) r.splice(i, 1);
+    }
+  }
+
+  /* ---------------------------------------------------------------- Zeichnen */
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const bgCanvas = document.createElement('canvas');
+  const bgc = bgCanvas.getContext('2d');
+  let scale = 1;
+
+  function setRes(px) {
+    canvas.width = px;
+    canvas.height = Math.round((px * 16) / 9);
+    bgCanvas.width = canvas.width;
+    bgCanvas.height = canvas.height;
+    scale = canvas.width / W;
+    paintBackground();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(bgCanvas, 0, 0);
+  }
+
+  function paintBackground() {
+    bgc.setTransform(scale, 0, 0, scale, 0, 0);
+    if (P.bg === 'black') {
+      bgc.fillStyle = '#05060a';
+      bgc.fillRect(0, 0, W, H);
+    } else {
+      const g = bgc.createRadialGradient(CX, CY, 0, CX, CY, W * 0.98);
+      g.addColorStop(0, '#151b2c');
+      g.addColorStop(0.55, '#0a0d16');
+      g.addColorStop(1, '#05060a');
+      bgc.fillStyle = g;
+      bgc.fillRect(0, 0, W, H);
+      if (P.bg === 'grid') {
+        bgc.strokeStyle = 'rgba(120, 150, 190, .08)';
+        bgc.lineWidth = 2;
+        for (let x = 0; x <= W; x += 90) { bgc.beginPath(); bgc.moveTo(x, 0); bgc.lineTo(x, H); bgc.stroke(); }
+        for (let y = 0; y <= H; y += 90) { bgc.beginPath(); bgc.moveTo(0, y); bgc.lineTo(W, y); bgc.stroke(); }
+      }
+    }
+  }
+
+  function withAlpha(col, a) {
+    if (col[0] === '#') {
+      const n = parseInt(col.slice(1), 16);
+      return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    }
+    return col.replace(')', ' / ' + a + ')');
+  }
+
+  /* Bälle werden als vorgerenderte Sprites gezeichnet – bei 200 Bällen ist
+     shadowBlur pro Frame zu teuer. */
+  const SPR = 128, CORE = 40, K = (SPR / 2) / CORE;
+  const sprites = new Map();
+  function sprite(col) {
+    let c = sprites.get(col);
+    if (c) return c;
+    c = document.createElement('canvas');
+    c.width = c.height = SPR;
+    const g2 = c.getContext('2d');
+    const gr = g2.createRadialGradient(SPR / 2, SPR / 2, 0, SPR / 2, SPR / 2, SPR / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,.95)');
+    gr.addColorStop(0.22, col);
+    gr.addColorStop(0.62, col);
+    gr.addColorStop(0.80, withAlpha(col, 0.26));
+    gr.addColorStop(1, withAlpha(col, 0));
+    g2.fillStyle = gr;
+    g2.fillRect(0, 0, SPR, SPR);
+    if (sprites.size > 200) sprites.clear();
+    sprites.set(col, c);
+    return c;
+  }
+
+  function pathShape() {
+    ctx.beginPath();
+    if (world.kind === 'circle') { ctx.arc(CX, CY, world.R, 0, TAU); return; }
+    const v = world.verts;
+    ctx.moveTo(v[0].x, v[0].y);
+    for (let i = 1; i < v.length; i++) ctx.lineTo(v[i].x, v[i].y);
+    ctx.closePath();
+  }
+
+  function draw() {
+    const pal = PALETTES[P.palette] || PALETTES.neon;
+    const fade = 1 - (P.trail / 100) * 0.88;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = fade;
+    ctx.drawImage(bgCanvas, 0, 0);
+    ctx.globalAlpha = 1;
+
+    let ox = 0, oy = 0;
+    if (P.shake && world.shake > 0) {
+      const m = world.shake * 11;
+      ox = (Math.random() - 0.5) * m;
+      oy = (Math.random() - 0.5) * m;
+    }
+    ctx.setTransform(scale, 0, 0, scale, ox * scale, oy * scale);
+
+    // Form
+    ctx.lineJoin = 'round';
+    pathShape();
+    ctx.strokeStyle = withAlpha(pal[0], 0.13 + world.flash * 0.2);
+    ctx.lineWidth = P.wall * 2.6;
+    ctx.stroke();
+    pathShape();
+    ctx.strokeStyle = 'rgba(236, 242, 255,' + (0.6 + world.flash * 0.4) + ')';
+    ctx.lineWidth = P.wall;
+    ctx.stroke();
+
+    // Barrieren
+    ctx.lineCap = 'round';
+    for (const o of world.barriers) {
+      if (o.t === 'peg') {
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU);
+        ctx.fillStyle = '#7d97ac'; ctx.fill();
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.52, 0, TAU);
+        ctx.fillStyle = '#e2eaf1'; ctx.fill();
+      } else if (o.t === 'bar') {
+        const c = Math.cos(o.a), s = Math.sin(o.a);
+        const x1 = o.cx - (c * o.len) / 2, y1 = o.cy - (s * o.len) / 2;
+        const x2 = o.cx + (c * o.len) / 2, y2 = o.cy + (s * o.len) / 2;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
+        ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
+        ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
+      }
+    }
+
+    // Treffer-Wellen und Funken
+    ctx.globalCompositeOperation = 'lighter';
+    for (const r of world.ripples) {
+      ctx.strokeStyle = 'rgba(255,255,255,' + r.life * 0.3 + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * 64 + 6, 0, TAU); ctx.stroke();
+    }
+    for (const p of world.sparks) {
+      ctx.fillStyle = withAlpha(p.col, Math.max(0, p.life) * 0.85);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 * p.life + 1, 0, TAU); ctx.fill();
+    }
+
+    // Bälle
+    const balls = world.balls;
+    if (P.glow && balls.length <= 340) {
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i], d = b.r * 2 * K;
+        ctx.drawImage(sprite(colorOf(b)), b.x - d / 2, b.y - d / 2, d, d);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        ctx.fillStyle = colorOf(b);
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+      }
+    }
+
+    if (P.hud) drawHud(pal);
+  }
+
+  function rrect(x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+    else ctx.rect(x, y, w, h);
+  }
+
+  function drawHud(pal) {
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    const title = P.hudTitle.trim();
+    if (title) {
+      ctx.font = '600 44px "IBM Plex Sans", system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.72)';
+      ctx.fillText(title.toUpperCase(), CX, 122);
+    }
+
+    ctx.shadowColor = 'rgba(0,0,0,.55)';
+    ctx.shadowBlur = 26;
+    ctx.font = '150px "Archivo Black", "Arial Black", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(world.balls.length), CX, 296);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '500 28px "IBM Plex Mono", monospace';
+    ctx.fillStyle = 'rgba(255,255,255,.45)';
+    ctx.fillText('BÄLLE', CX, 344);
+
+    const w = 520, x = CX - w / 2, y = H - 168;
+    const p = Math.min(1, world.balls.length / Math.max(1, P.target));
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    rrect(x, y, w, 10, 5); ctx.fill();
+    ctx.fillStyle = pal[0];
+    rrect(x, y, Math.max(10, w * p), 10, 5); ctx.fill();
+    ctx.font = '500 26px "IBM Plex Mono", monospace';
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.fillText('ZIEL ' + P.target + '   ·   TREFFER ' + world.hits, CX, y + 46);
+  }
+
+  /* ---------------------------------------------------------------- Ton */
+  let ac = null, master = null, recDest = null, lastNote = 0;
+  const SCALES = {
+    penta: [0, 2, 4, 7, 9],
+    minor: [0, 2, 3, 5, 7, 8, 10],
+    major: [0, 2, 4, 5, 7, 9, 11],
+    blip: [0, 5, 12],
+  };
+  function audioInit() {
+    if (ac) return ac;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ac = new AC();
+    master = ac.createGain();
+    master.gain.value = 0.9;
+    master.connect(ac.destination);
+    try { recDest = ac.createMediaStreamDestination(); master.connect(recDest); } catch (e) { recDest = null; }
+    return ac;
+  }
+  function audioResume() {
+    audioInit();
+    if (ac && ac.state === 'suspended') ac.resume();
+  }
+  function playNote(b) {
+    if (!P.sound || !ac || ac.state !== 'running') return;
+    const now = ac.currentTime;
+    if (now - lastNote < 0.022) return;      // Stimmenbegrenzung gegen Matsch
+    lastNote = now;
+    const sc = SCALES[P.scale] || SCALES.penta;
+    const i = Math.max(0, world.hits - 1);
+    const semi = sc[i % sc.length] + 12 * (Math.floor(i / sc.length) % 3);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = P.scale === 'blip' ? 'square' : 'triangle';
+    o.frequency.value = 196 * Math.pow(2, semi / 12);
+    const vol = (P.volume / 100) * 0.16;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), now + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+    o.connect(g); g.connect(master);
+    o.start(now); o.stop(now + 0.3);
+  }
+
+  /* ---------------------------------------------------------------- Aufnahme */
+  let dl = null, recorder = null, recording = false, recStart = 0;
+  let chunks = [], recBlob = null, recExt = 'webm', recDur = 0;
+
+  if (window.claude && typeof window.claude.use === 'function') {
+    window.claude.use('downloads').then((d) => { dl = d; }).catch(() => { dl = null; });
+  }
+
+  const el = (id) => document.getElementById(id);
+  const fmtSize = (n) => (n / 1048576).toFixed(1).replace('.', ',') + ' MB';
+
+  function tally(text, live) {
+    el('tallyText').textContent = text;
+    el('lamp').classList.toggle('live', !!live);
+  }
+
+  function startRec() {
+    if (recording) return;
+    if (!window.MediaRecorder) { exportMsg('Dieser Browser kann nicht aufnehmen – nimm den Bildschirm auf.', true); return; }
+    audioResume();
+    const cands = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+    const type = cands.find((t) => MediaRecorder.isTypeSupported(t));
+    if (!type) { exportMsg('Kein unterstütztes Videoformat gefunden.', true); return; }
+
+    reset();                        // eine Aufnahme beginnt immer sauber von vorn
+    world.running = true;
+    syncPlay();
+
+    const tracks = canvas.captureStream(60).getVideoTracks();
+    if (P.sound && recDest) tracks.push(...recDest.stream.getAudioTracks());
+    try {
+      recorder = new MediaRecorder(new MediaStream(tracks), {
+        mimeType: type,
+        videoBitsPerSecond: P.bitrate * 1e6,
+        audioBitsPerSecond: 128000,
+      });
+    } catch (e) { exportMsg('Aufnahme konnte nicht starten: ' + e.message, true); return; }
+
+    recExt = type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    chunks = []; recBlob = null;
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = finishRec;
+    recorder.start(400);
+    recording = true;
+    recStart = performance.now();
+    el('btnRec').textContent = 'Stop';
+    el('resGroup').querySelectorAll('select').forEach((s) => { s.disabled = true; });
+    exportMsg('Läuft …');
+    tally('Aufnahme', true);
+  }
+
+  function stopRec() {
+    if (!recording || !recorder) return;
+    recording = false;
+    recDur = (performance.now() - recStart) / 1000;
+    try { recorder.stop(); } catch (e) { /* bereits gestoppt */ }
+    el('btnRec').textContent = 'Aufnahme';
+    el('resGroup').querySelectorAll('select').forEach((s) => { s.disabled = false; });
+    tally('Bereit', false);
+  }
+
+  function finishRec() {
+    recBlob = new Blob(chunks, { type: recorder && recorder.mimeType ? recorder.mimeType : 'video/webm' });
+    chunks = [];
+    el('recSize').textContent = '';
+    const over = dl && recBlob.size > 16 * 1024 * 1024;
+    exportMsg(
+      recDur.toFixed(1).replace('.', ',') + ' s · ' + fmtSize(recBlob.size) + ' · ' + recExt.toUpperCase() +
+      (over ? ' – über 16 MB, bitte Qualität oder Dauer senken.' : ''),
+      !!over, true,
+    );
+  }
+
+  function dlError(err) {
+    const c = err && err.code;
+    if (c === 'declined') return 'Speichern abgebrochen.';
+    if (c === 'too_large') return 'Datei über 16 MB – Qualität oder Dauer senken.';
+    if (c === 'rate_limited') return 'Noch ein Dialog offen – kurz warten.';
+    if (c === 'rejected_extension' || c === 'extension_not_enabled') return 'Dieses Format lässt sich hier nicht speichern.';
+    return 'Speichern hier nicht möglich – nimm den Bildschirm auf.';
+  }
+
+  async function saveRec() {
+    if (!recBlob) return;
+    const name = 'prallwerk-' + P.shape + '-' + seed + '.' + recExt;
+    if (dl) {
+      try {
+        const r = await dl.save({ filename: name, data: recBlob });
+        exportMsg(r.status === 'saved' ? 'Gespeichert: ' + name : 'Übergeben: ' + name, false, true);
+      } catch (err) {
+        exportMsg(dlError(err), true, true);
+      }
+      return;
+    }
+    const url = URL.createObjectURL(recBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    exportMsg('Download gestartet: ' + name, false, true);
+  }
+
+  /* ---------------------------------------------------------------- Bedienung */
+  const rebuildAll = () => { buildShape(); buildBarriers(); };
+  const rebuildBarriers = () => buildBarriers();
+
+  const rng = (key, label, min, max, step, fmt, apply) =>
+    ({ kind: 'range', key, label, min, max, step, fmt, apply });
+  const sel = (key, label, opts, apply, num) =>
+    ({ kind: 'select', key, label, opts, apply, num });
+  const tog = (key, label, apply) => ({ kind: 'toggle', key, label, apply });
+  const txt = (key, label) => ({ kind: 'text', key, label });
+
+  const pct = (v) => Math.round(v * 100) + ' %';
+  const deg = (v) => v + ' °/s';
+  const px = (v) => v + ' px';
+
+  const MODULES = [
+    {
+      title: 'Form', hint: 'Rahmen',
+      rows: [
+        sel('shape', 'Form', Object.keys(SHAPES).map((k) => [k, SHAPES[k].name]), rebuildAll),
+        rng('size', 'Größe', 0.5, 0.98, 0.01, pct, rebuildAll),
+        rng('spin', 'Eigendrehung', -90, 90, 1, deg, () => { world.om = (P.spin * Math.PI) / 180; }),
+        rng('wall', 'Wandstärke', 4, 30, 1, px),
+      ],
+    },
+    {
+      title: 'Barrieren', hint: 'Hindernisse',
+      rows: [
+        sel('barrier', 'Aufbau', Object.keys(BARRIERS).map((k) => [k, BARRIERS[k]]), rebuildBarriers),
+        rng('bCount', 'Menge', 1, 7, 1, (v) => String(v), rebuildBarriers),
+        rng('bSpeed', 'Drehtempo', 0, 220, 5, deg, rebuildBarriers),
+      ],
+    },
+    {
+      title: 'Physik', hint: 'px/s²',
+      rows: [
+        rng('gravity', 'Schwerkraft', 0, 4200, 50, (v) => v + ' px/s²'),
+        rng('bounce', 'Sprungkraft', 0.6, 1.12, 0.01, (v) => v.toFixed(2).replace('.', ',')),
+        rng('startSpeed', 'Anstoß', 200, 2000, 50, (v) => v + ' px/s'),
+        rng('ballSize', 'Ballgröße', 8, 48, 1, px),
+        rng('slide', 'Gleiten', 0.9, 1, 0.005, (v) => v.toFixed(3).replace('.', ',')),
+        rng('tempo', 'Zeitlupe / Tempo', 0.25, 1.5, 0.05, (v) => v.toFixed(2).replace('.', ',') + '×'),
+      ],
+    },
+    {
+      title: 'Multiplikation', hint: 'Kernidee',
+      rows: [
+        sel('split', 'Auslöser', [
+          ['off', 'Aus'], ['chance', 'Zufall bei Treffer'],
+          ['always', 'Jeder Treffer'], ['barrier', 'Nur an Barrieren'],
+        ]),
+        rng('splitChance', 'Wahrscheinlichkeit', 1, 100, 1, (v) => v + ' %'),
+        rng('maxBalls', 'Obergrenze', 1, 500, 1, (v) => v + ' Bälle'),
+        rng('spread', 'Streuwinkel', 0, 120, 2, (v) => v + ' °'),
+        tog('shrink', 'Teilung verkleinert'),
+      ],
+    },
+    {
+      title: 'Optik', hint: 'Bildsprache',
+      rows: [
+        sel('palette', 'Palette', [
+          ['neon', 'Neon'], ['candy', 'Candy'], ['sunset', 'Sonnenuntergang'],
+          ['ice', 'Eis'], ['lava', 'Lava'], ['brass', 'Messing'],
+        ]),
+        sel('colorMode', 'Farbwechsel', [
+          ['hit', 'Bei jedem Treffer'], ['flow', 'Regenbogenfluss'], ['fixed', 'Feste Farbe je Ball'],
+        ]),
+        rng('trail', 'Leuchtspur', 0, 100, 1, (v) => v + ' %'),
+        sel('bg', 'Hintergrund', [
+          ['studio', 'Studioverlauf'], ['black', 'Tiefschwarz'], ['grid', 'Raster'],
+        ], paintBackground),
+        tog('glow', 'Leuchten'),
+        tog('sparks', 'Funken'),
+        tog('shake', 'Bildwackeln'),
+      ],
+    },
+    {
+      title: 'Einblendung', hint: 'im Bild',
+      rows: [
+        tog('hud', 'Zähler zeigen'),
+        txt('hudTitle', 'Titelzeile'),
+        rng('target', 'Zielmarke', 10, 500, 10, (v) => v + ' Bälle'),
+      ],
+    },
+    {
+      title: 'Ton', hint: 'nach erstem Klick',
+      rows: [
+        tog('sound', 'Treffer klingen', audioResume),
+        sel('scale', 'Tonleiter', [
+          ['penta', 'Pentatonik'], ['major', 'Dur'], ['minor', 'Moll'], ['blip', 'Blip'],
+        ]),
+        rng('volume', 'Lautstärke', 0, 100, 1, (v) => v + ' %'),
+      ],
+    },
+    {
+      title: 'Export', hint: '9:16', id: 'resGroup',
+      rows: [
+        sel('outRes', 'Auflösung', [
+          [540, '540 × 960'], [720, '720 × 1280'], [1080, '1080 × 1920'],
+        ], () => setRes(P.outRes), true),
+        sel('bitrate', 'Qualität', [
+          [2, '2 Mbit/s – klein'], [4, '4 Mbit/s – Standard'], [8, '8 Mbit/s – scharf'],
+        ], null, true),
+        sel('recLimit', 'Länge', [
+          [10, '10 Sekunden'], [15, '15 Sekunden'], [20, '20 Sekunden'],
+          [30, '30 Sekunden'], [0, 'Bis Stop'],
+        ], null, true),
+      ],
+      extra: (box) => {
+        const note = document.createElement('p');
+        note.className = 'row';
+        note.innerHTML = '<span class="note">Die Aufnahme startet den Lauf neu und endet automatisch. Ton wird mitgeschnitten.</span>';
+        box.appendChild(note);
+        const out = document.createElement('div');
+        out.className = 'export-out';
+        out.id = 'exportOut';
+        out.hidden = true;
+        out.innerHTML = '<p id="exportText"></p><button class="btn primary" id="btnSave" hidden>Video speichern</button>';
+        box.appendChild(out);
+      },
+    },
+  ];
+
+  const controls = {};
+
+  function buildRail() {
+    const rail = el('rail');
+    for (const mod of MODULES) {
+      const box = document.createElement('section');
+      box.className = 'mod';
+      if (mod.id) box.id = mod.id;
+      const h = document.createElement('h2');
+      h.textContent = mod.title;
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = mod.hint || '';
+      h.appendChild(hint);
+      box.appendChild(h);
+      for (const cfg of mod.rows) box.appendChild(buildRow(cfg));
+      if (mod.extra) mod.extra(box);
+      rail.appendChild(box);
+    }
+  }
+
+  function buildRow(cfg) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const id = 'c_' + cfg.key;
+    const lab = document.createElement('label');
+    lab.textContent = cfg.label;
+    lab.htmlFor = id;
+    row.appendChild(lab);
+
+    if (cfg.kind === 'range') {
+      const out = document.createElement('span');
+      out.className = 'val';
+      out.textContent = cfg.fmt(P[cfg.key]);
+      row.appendChild(out);
+      const i = document.createElement('input');
+      i.type = 'range'; i.id = id; i.className = 'wide';
+      i.min = cfg.min; i.max = cfg.max; i.step = cfg.step; i.value = P[cfg.key];
+      i.addEventListener('input', () => {
+        P[cfg.key] = parseFloat(i.value);
+        out.textContent = cfg.fmt(P[cfg.key]);
+        if (cfg.apply) cfg.apply();
+      });
+      row.appendChild(i);
+      controls[cfg.key] = () => { i.value = P[cfg.key]; out.textContent = cfg.fmt(P[cfg.key]); };
+
+    } else if (cfg.kind === 'select') {
+      const s = document.createElement('select');
+      s.id = id; s.className = 'wide';
+      for (const [v, t] of cfg.opts) {
+        const o = document.createElement('option');
+        o.value = String(v); o.textContent = t;
+        s.appendChild(o);
+      }
+      s.value = String(P[cfg.key]);
+      s.addEventListener('change', () => {
+        P[cfg.key] = cfg.num ? Number(s.value) : s.value;
+        if (cfg.apply) cfg.apply();
+      });
+      row.appendChild(s);
+      controls[cfg.key] = () => { s.value = String(P[cfg.key]); };
+
+    } else if (cfg.kind === 'toggle') {
+      const c = document.createElement('input');
+      c.type = 'checkbox'; c.className = 'sw'; c.id = id;
+      c.checked = !!P[cfg.key];
+      c.addEventListener('change', () => {
+        P[cfg.key] = c.checked;
+        if (cfg.apply) cfg.apply();
+      });
+      row.appendChild(c);
+      controls[cfg.key] = () => { c.checked = !!P[cfg.key]; };
+
+    } else {
+      const t = document.createElement('input');
+      t.type = 'text'; t.id = id; t.className = 'wide';
+      t.maxLength = 42; t.value = P[cfg.key];
+      t.addEventListener('input', () => { P[cfg.key] = t.value; });
+      row.appendChild(t);
+      controls[cfg.key] = () => { t.value = P[cfg.key]; };
+    }
+    return row;
+  }
+
+  /* ---------------------------------------------------------------- Vorlagen */
+  const PRESETS = [
+    { id: 'klassisch', name: 'Klassisch', patch: {
+      shape: 'circle', size: 0.86, spin: 0, wall: 14, barrier: 'rings', bCount: 3, bSpeed: 55,
+      gravity: 2400, bounce: 1, startSpeed: 850, ballSize: 26, tempo: 1,
+      split: 'chance', splitChance: 18, maxBalls: 180, spread: 30, shrink: true,
+      palette: 'neon', colorMode: 'hit', trail: 55, bg: 'studio', target: 180,
+      hudTitle: 'WIE VIELE WERDEN ES?', scale: 'penta' } },
+    { id: 'plinko', name: 'Plinko-Regen', patch: {
+      shape: 'squircle', size: 0.94, spin: 0, wall: 12, barrier: 'pegs', bCount: 5, bSpeed: 0,
+      gravity: 2900, bounce: 0.88, startSpeed: 600, ballSize: 22, tempo: 1,
+      split: 'barrier', splitChance: 40, maxBalls: 280, spread: 44, shrink: true,
+      palette: 'candy', colorMode: 'hit', trail: 32, bg: 'grid', target: 280,
+      hudTitle: 'JEDER PIN TEILT', scale: 'major' } },
+    { id: 'mixer', name: 'Mixer', patch: {
+      shape: 'circle', size: 0.9, spin: 18, wall: 16, barrier: 'spinner', bCount: 3, bSpeed: 120,
+      gravity: 1700, bounce: 1.03, startSpeed: 900, ballSize: 24, tempo: 1,
+      split: 'chance', splitChance: 12, maxBalls: 200, spread: 26, shrink: true,
+      palette: 'lava', colorMode: 'flow', trail: 72, bg: 'studio', target: 200,
+      hudTitle: 'MIXER LÄUFT', scale: 'minor' } },
+    { id: 'tunnel', name: 'Ringtunnel', patch: {
+      shape: 'circle', size: 0.95, spin: 0, wall: 14, barrier: 'rings', bCount: 5, bSpeed: 85,
+      gravity: 2200, bounce: 1.05, startSpeed: 800, ballSize: 20, tempo: 1,
+      split: 'chance', splitChance: 9, maxBalls: 320, spread: 22, shrink: true,
+      palette: 'ice', colorMode: 'hit', trail: 68, bg: 'studio', target: 320,
+      hudTitle: 'DURCH ALLE RINGE', scale: 'penta' } },
+    { id: 'stern', name: 'Sternchaos', patch: {
+      shape: 'star5', size: 0.98, spin: -26, wall: 12, barrier: 'orbit', bCount: 4, bSpeed: 70,
+      gravity: 2600, bounce: 1.06, startSpeed: 950, ballSize: 24, tempo: 1,
+      split: 'chance', splitChance: 24, maxBalls: 240, spread: 40, shrink: true,
+      palette: 'sunset', colorMode: 'hit', trail: 60, bg: 'studio', target: 240,
+      hudTitle: 'STERN OHNE AUSGANG', scale: 'penta' } },
+    { id: 'herz', name: 'Herzschlag', patch: {
+      shape: 'heart', size: 0.98, spin: 0, wall: 15, barrier: 'bars', bCount: 3, bSpeed: 60,
+      gravity: 2300, bounce: 1.01, startSpeed: 800, ballSize: 26, tempo: 1,
+      split: 'chance', splitChance: 16, maxBalls: 160, spread: 30, shrink: true,
+      palette: 'brass', colorMode: 'hit', trail: 58, bg: 'studio', target: 160,
+      hudTitle: 'FÜR DICH', scale: 'major' } },
+  ];
+
+  function buildPresets() {
+    const wrap = el('presets');
+    for (const p of PRESETS) {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.type = 'button';
+      b.textContent = p.name;
+      b.dataset.preset = p.id;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => applyPreset(p));
+      wrap.appendChild(b);
+    }
+  }
+
+  function applyPreset(p) {
+    Object.assign(P, p.patch);
+    for (const k in controls) controls[k]();
+    for (const b of el('presets').children) {
+      b.setAttribute('aria-pressed', String(b.dataset.preset === p.id));
+    }
+    paintBackground();
+    reset();
+    world.running = true;
+    syncPlay();
+  }
+
+  /* ---------------------------------------------------------------- Anzeige */
+  let fps = 60;
+  function updateReadout() {
+    el('mBalls').textContent = String(world.balls.length);
+    el('mHits').textContent = String(world.hits);
+    el('mTime').textContent = world.time.toFixed(1).replace('.', ',') + ' s';
+    el('mFps').textContent = String(Math.round(fps));
+    el('mSeed').textContent = String(seed).padStart(4, '0');
+  }
+  function syncPlay() {
+    el('btnPlay').textContent = world.running ? 'Pause' : 'Start';
+  }
+  function exportMsg(text, warn, withSave) {
+    const box = el('exportOut');
+    box.hidden = false;
+    box.classList.toggle('warn', !!warn);
+    el('exportText').textContent = text;
+    el('btnSave').hidden = !withSave;
+  }
+
+  /* ---------------------------------------------------------------- Schleife */
+  let acc = 0, last = performance.now(), tick = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const real = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (real > 0.0005) fps += (1 / real - fps) * 0.06;
+
+    if (world.running) {
+      acc += real * P.tempo;
+      let n = 0;
+      while (acc >= STEP && n < 4) {
+        for (let s = 0; s < SUB; s++) substep(DT);
+        acc -= STEP;
+        n++;
+      }
+      if (acc > STEP * 4) acc = 0;
+    }
+    draw();
+
+    if (recording) {
+      const t = (now - recStart) / 1000;
+      el('recSize').textContent = 'REC ' + t.toFixed(1).replace('.', ',') + ' s';
+      if (P.recLimit > 0 && t >= P.recLimit) stopRec();
+    }
+    if (tick++ % 6 === 0) updateReadout();
+  }
+
+  /* ---------------------------------------------------------------- Start */
+  buildRail();
+  buildPresets();
+  el('presets').firstElementChild.setAttribute('aria-pressed', 'true');
+  setRes(P.outRes);
+  reset();
+
+  el('btnPlay').addEventListener('click', () => { world.running = !world.running; syncPlay(); });
+  el('btnReset').addEventListener('click', () => { reset(); world.running = true; syncPlay(); });
+  el('btnSeed').addEventListener('click', () => {
+    seed = Math.floor(Math.random() * 9000) + 1000;
+    reset();
+    world.running = true;
+    syncPlay();
+  });
+  el('btnRec').addEventListener('click', () => (recording ? stopRec() : startRec()));
+  el('btnSave').addEventListener('click', saveRec);
+
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); world.running = !world.running; syncPlay(); }
+    else if (e.key === 'r' || e.key === 'R') { reset(); world.running = true; syncPlay(); }
+    else if (e.key === 'n' || e.key === 'N') { seed = Math.floor(Math.random() * 9000) + 1000; reset(); }
+  });
+
+  // Ton darf erst nach einer Nutzeraktion starten.
+  document.addEventListener('pointerdown', audioResume, { once: true });
+  document.addEventListener('keydown', audioResume, { once: true });
+
+  seed = Math.floor(Math.random() * 9000) + 1000;
+  reset();
+  syncPlay();
+  requestAnimationFrame(frame);
+})();
+</script>
