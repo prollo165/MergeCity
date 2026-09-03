@@ -10,15 +10,25 @@ import { laden, laufen, abstaende, median, clock } from './harness.mjs';
 const engine = await laden();
 const { world, P, mel } = engine;
 
-/** Setzt alle Regler auf einen bekannten Stand. */
+/** Setzt alle Regler auf einen bekannten Stand. Jeder Test startet gleich –
+ *  sonst hängt sein Ergebnis am Test davor. */
 function stelle(werte = {}) {
   Object.assign(P, {
-    shape: 'circle', size: 0.86, spin: 0, barrier: 'rings', bCount: 3, bSpeed: 55,
+    shape: 'circle', size: 0.86, spin: 0, wall: 14, wallShow: true,
+    barrier: 'rings', bCount: 3, bSpeed: 55,
     gravity: 2400, bounce: 1, startSpeed: 850, ballSize: 26, tempo: 1,
-    split: 'chance', splitChance: 18, maxBalls: 180,
+    slide: 1, ballHit: false, startBalls: 1,
+    split: 'chance', splitChance: 18, maxBalls: 180, spread: 30, shrink: true,
+    colorMode: 'hit', palette: 'neon',
     melSrc: 'builtin', melPick: 'korobeiniki', warp: false, noteLen: 0.5, bpm: 120,
     melTrigger: 'all', melRate: 7, rhythm: 'off',
+    songMode: 'unlock', unlockAt: 60, songTrigger: 'all', songStart: 0, burstLen: 0.28,
+    snap: false, editSize: 70,
   }, werte);
+  world.custom.length = 0;
+  world.spawn = null;
+  engine.song.buffer = null;
+  engine.setSeed(4711);          // fester Seed: sonst wäre kein Lauf wiederholbar
   engine.refreshMelody();
   engine.reset();
 }
@@ -279,4 +289,78 @@ test('GIF-Einzelbilder laufen nach ihren eigenen Zeiten weiter', () => {
   const still = { t: 'img', img: 'nur eins' };
   engine.setFrames(still, null);
   assert.equal(engine.gifBild(still), 'nur eins');
+});
+
+test('der Song wird erst ab der Zielzahl freigegeben', () => {
+  stelle({ split: 'always', splitChance: 100, maxBalls: 40, barrier: 'rings' });
+  Object.assign(P, {
+    rhythm: 'song', songMode: 'unlock', unlockAt: 8,
+    songTrigger: 'all', songStart: 0, songVol: 80,
+  });
+  engine.song.buffer = { duration: 90 };
+  engine.reset();
+  assert.equal(engine.unlocked, false, 'schon zu Beginn frei');
+
+  // Solange zu wenige Bälle da sind, springt der Song immer wieder auf Anfang.
+  laufen(engine, 12);
+  if (world.balls.length < 8) {
+    assert.equal(engine.unlocked, false, 'zu früh freigegeben bei ' + world.balls.length + ' Bällen');
+    assert.equal(engine.songPos, P.songStart, 'der Song ist weitergelaufen statt neu zu starten');
+  }
+
+  laufen(engine, 400);
+  assert.ok(world.balls.length >= 8, 'nicht genug Bälle: ' + world.balls.length);
+  assert.equal(engine.unlocked, true, 'der Song wurde nie freigegeben');
+
+  // Mit unerreichbarer Zielzahl bleibt er gesperrt.
+  stelle({ split: 'off', maxBalls: 1 });
+  Object.assign(P, { rhythm: 'song', songMode: 'unlock', unlockAt: 500, songTrigger: 'all' });
+  engine.song.buffer = { duration: 90 };
+  engine.reset();
+  laufen(engine, 300);
+  assert.equal(engine.unlocked, false, 'ohne genug Bälle trotzdem freigegeben');
+  engine.song.buffer = null;
+  P.rhythm = 'off';
+});
+
+test('der Rahmen als Form hält die Bälle im ganzen Bild', () => {
+  stelle({ shape: 'frame', size: 1, barrier: 'none', split: 'chance', splitChance: 30, maxBalls: 40 });
+  assert.ok(world.inR > 500, 'der Rahmen ist zu klein geraten: ' + world.inR.toFixed(0));
+  laufen(engine, 600);
+  for (const b of world.balls) {
+    assert.ok(b.x > -1 && b.x < 1081 && b.y > -1 && b.y < 1921,
+      'Ball außerhalb des Bildes: ' + b.x.toFixed(0) + '/' + b.y.toFixed(0));
+  }
+  // Die Ecken müssen erreichbar sein – ein Kreis würde das nie zulassen.
+  assert.ok(world.balls.some((b) => b.y > 1500 || b.y < 400), 'die Bälle bleiben in der Mitte');
+});
+
+test('ein selbst gesetzter Startpunkt gilt', () => {
+  stelle({ shape: 'frame', size: 1, split: 'off', startBalls: 3, startSpeed: 100 });
+  world.spawn = { x: 300, y: 500 };
+  engine.reset();
+  for (const b of world.balls) {
+    assert.ok(Math.hypot(b.x - 300, b.y - 500) < 220, 'Ball startet woanders: ' + b.x.toFixed(0));
+  }
+  world.spawn = null;
+});
+
+test('Deko ohne Kollision lenkt nichts ab', () => {
+  stelle({ shape: 'frame', size: 1, barrier: 'none', gravity: 2400, split: 'off' });
+  world.custom.length = 0;
+  world.custom.push({ t: 'bar', cx: 540, cy: 1250, len: 600, h: 14, a: 0, om: 0, solid: false });
+  world.balls.length = 0;
+  world.balls.push(ball(540, 1050, 0, 400, 20));
+  laufen(engine, 25);
+  assert.ok(world.balls[0].vy > 0, 'die Deko hat den Ball gestoppt');
+  assert.ok(world.balls[0].y > 1250, 'der Ball ist nicht hindurchgefallen');
+
+  // Dasselbe Hindernis mit Kollision hält ihn auf.
+  world.custom[0].solid = true;
+  engine.reset();
+  world.balls.length = 0;
+  world.balls.push(ball(540, 1050, 0, 400, 20));
+  laufen(engine, 25);
+  assert.ok(world.balls[0].vy < 0, 'mit Kollision hätte er zurückkommen müssen');
+  world.custom.length = 0;
 });

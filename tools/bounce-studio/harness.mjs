@@ -56,7 +56,10 @@ function element(id = '') {
 }
 
 const clock = { t: 0 };                       // Sekunden, vom Test gestellt
-const param = () => ({ value: 0, setValueAtTime: noop, exponentialRampToValueAtTime: noop, linearRampToValueAtTime: noop });
+const param = () => ({
+  value: 0, setValueAtTime: noop, exponentialRampToValueAtTime: noop,
+  linearRampToValueAtTime: noop, cancelScheduledValues: noop,
+});
 const audioNode = (extra) => ({ connect: noop, disconnect: noop, start: noop, stop: noop, ...extra });
 
 class FakeAudioContext {
@@ -78,7 +81,8 @@ export async function laden() {
   // Anker mit Ende der Funktion, sonst trifft der Ersatz den Aufruf in frame().
   const anker = '\n  requestAnimationFrame(frame);\n})();';
   const griff = '\n  globalThis.__engine = { world, P, mel, frame, reset, refreshMelody, '
-    + 'predictImpacts, audioResume, noteGap, parseMidi, song, maskFromAlpha, sampleSdf, setFrames, gifBild, '
+    + 'predictImpacts, audioResume, noteGap, parseMidi, song, maskFromAlpha, sampleSdf, setFrames, gifBild, ballLooks, '
+    + 'get unlocked() { return unlocked; }, setSeed: (v) => { seed = v; }, '
     + 'get warp() { return warp; }, get songPos() { return songPos; } };\n})();';
   const patched = code.replace(anker, griff);
   if (patched === code) throw new Error('Startaufruf in app.html nicht gefunden');

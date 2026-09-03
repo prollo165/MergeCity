@@ -387,9 +387,10 @@
     melSrc: 'builtin', melPick: 'korobeiniki', scale: 'penta',
     instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
     warp: false, noteLen: 0.5,
-    editSize: 70,
+    editSize: 70, snap: false, wallShow: true,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
-    songMode: 'burst', burstLen: 0.28, songTrigger: 'all',
+    songMode: 'unlock', burstLen: 0.28, songTrigger: 'all', unlockAt: 60,
+    ballRoll: true,
     beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
     outRes: 720, bitrate: 4, recLimit: 15,
   };
@@ -470,6 +471,13 @@
 
   const SHAPES = {
     circle:  { name: 'Kreis', unit: null },
+    // Der Rahmen füllt bei Größe 1,00 genau das ganze 9:16-Bild – die Vorlage
+    // für eine selbst gebaute Szene.
+    // Der Mittelpunkt liegt bei CY, nicht in der Bildmitte – die Kanten müssen
+    // das ausgleichen, damit der Rahmen bei Größe 1,00 genau das Bild füllt.
+    frame:   { name: 'Rahmen (ganzes Bild)', unit: [
+      { x: 1, y: (H - CY) / (W / 2) }, { x: -1, y: (H - CY) / (W / 2) },
+      { x: -1, y: -CY / (W / 2) }, { x: 1, y: -CY / (W / 2) }] },
     squircle:{ name: 'Weiches Quadrat', unit: superell(4) },
     square:  { name: 'Quadrat', unit: reg(4, Math.PI / 4) },
     tri:     { name: 'Dreieck', unit: reg(3, -Math.PI / 2) },
@@ -486,7 +494,7 @@
   const world = {
     kind: 'circle', R: 470, Rbase: 470, angle: 0, om: 0,
     verts: [], norms: [], inR: 470,
-    barriers: [], custom: [], balls: [], sparks: [], ripples: [],
+    barriers: [], custom: [], balls: [], sparks: [], ripples: [], spawn: null,
     hits: 0, time: 0, flash: 0, shake: 0, running: true,
     pulse: 0, beats: 0, beatT: 0,
   };
@@ -704,8 +712,10 @@
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + rrange(-0.75, 0.75);
       const versatz = n === 1 ? 0 : (i / (n - 1) - 0.5) * breite;
+      const sx = world.spawn ? world.spawn.x : CX;
+      const sy = world.spawn ? world.spawn.y : CY - world.inR * 0.45;
       world.balls.push(spawn(
-        CX + versatz + rrange(-12, 12), CY - world.inR * 0.45 + rrange(-30, 30),
+        sx + versatz + rrange(-12, 12), sy + rrange(-30, 30),
         Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
         P.ballSize, i, rnd() * 360,
       ));
@@ -720,6 +730,8 @@
       stopSong();
       songPos = P.songStart;
       burstUntil = 0;
+      unlocked = false;
+      lastRestart = 0;
       if (world.running && P.songMode === 'loop') startSong(songPos);
     }
     paintBackground();
@@ -842,6 +854,7 @@
       if (sp > MAXV) { b.vx = (b.vx / sp) * MAXV; b.vy = (b.vy / sp) * MAXV; }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      b.rot = (b.rot || 0) + (b.vx / Math.max(6, b.r)) * dt;
       if (b.cool > 0) b.cool -= dt;
       collideWall(b);
       collideBarriers(b);
@@ -957,6 +970,7 @@
 
   function collideObject(b, o) {
     {
+      if (o.solid === false) return;             // reine Deko
       if (o.t === 'img') { collideImage(b, o); return; }
 
       if (o.t === 'peg') {
@@ -1252,7 +1266,7 @@
     } else {
       playNote(b, kind);
     }
-    if (P.songTrigger !== 'split') playBurst(b, kind);
+    if (P.songTrigger !== 'split') songHit(b, kind);
     maybeSplit(b, kind);
     // Das Nachziehen aufs Taktraster greift nur bei wenigen Bällen und an der
     // Wand – an rotierenden Barrieren ist die Flugzeit zu unberechenbar.
@@ -1299,7 +1313,7 @@
     c.cool = 0.06;
     c.hits = b.hits;
     world.balls.push(c);
-    if (P.songTrigger === 'split') playBurst(b, 'split');
+    if (P.songTrigger === 'split') songHit(b, 'split');
   }
 
   /* ---------------------------------------------------------------- Effekte */
@@ -1398,6 +1412,44 @@
     return c;
   }
 
+  /* --- Eigene Ballbilder --------------------------------------------------
+     Jedes geladene Bild wird einmal kreisrund vorgerendert; die Bälle greifen
+     es über ihren Farbindex ab, wechseln sich also durch. Animierte GIFs
+     bekommen je Einzelbild eine eigene Scheibe. */
+  const ballLooks = [];
+
+  function circleSprite(quelle, size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2, 0, TAU);
+    g.clip();
+    const iw = quelle.width || quelle.naturalWidth || size;
+    const ih = quelle.height || quelle.naturalHeight || size;
+    const k = Math.max(size / iw, size / ih);        // formatfüllend zuschneiden
+    g.drawImage(quelle, (size - iw * k) / 2, (size - ih * k) / 2, iw * k, ih * k);
+    return c;
+  }
+
+  function addBallLook(vor, src) {
+    const look = { src, sprites: [] };
+    if (vor.frames && vor.frames.length > 1) {
+      setFrames(look, vor.frames.slice(0, 24));
+      for (const f of look.frames) look.sprites.push(circleSprite(f.c, 128));
+    } else {
+      look.sprites.push(circleSprite(vor.img, 128));
+    }
+    ballLooks.push(look);
+    return look;
+  }
+
+  function ballSprite(look) {
+    if (look.sprites.length < 2) return look.sprites[0];
+    gifBild(look);                                   // setzt look.gifIdx
+    return look.sprites[look.gifIdx || 0];
+  }
+
   function pathShape() {
     ctx.beginPath();
     if (world.kind === 'circle') { ctx.arc(CX, CY, world.R, 0, TAU); return; }
@@ -1424,8 +1476,10 @@
     }
     ctx.setTransform(scale, 0, 0, scale, ox * scale, oy * scale);
 
-    // Form
+    // Form – für selbst gebaute Szenen lässt sie sich verstecken; sie hält
+    // die Bälle trotzdem im Bild.
     ctx.lineJoin = 'round';
+    if (P.wallShow) {
     pathShape();
     ctx.strokeStyle = withAlpha(pal[0], 0.13 + world.flash * 0.2);
     ctx.lineWidth = P.wall * 2.6;
@@ -1434,6 +1488,7 @@
     ctx.strokeStyle = 'rgba(236, 242, 255,' + (0.6 + world.flash * 0.4) + ')';
     ctx.lineWidth = P.wall;
     ctx.stroke();
+    }
 
     // Barrieren und eigene Hindernisse
     ctx.lineCap = 'round';
@@ -1455,7 +1510,31 @@
 
     // Bälle
     const balls = world.balls;
-    if (P.glow && balls.length <= 340) {
+    if (ballLooks.length) {
+      if (P.glow && balls.length <= 340) {           // Schein unter dem Bild
+        for (let i = 0; i < balls.length; i++) {
+          const b = balls[i], d = b.r * 2.4 * K;
+          ctx.drawImage(sprite(colorOf(b)), b.x - d / 2, b.y - d / 2, d, d);
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      const rollen = P.ballRoll && balls.length <= 220;
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        const spr = ballSprite(ballLooks[Math.abs(b.ci) % ballLooks.length]);
+        if (!spr) continue;
+        const d = b.r * 2;
+        if (rollen) {
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(b.rot || 0);
+          ctx.drawImage(spr, -b.r, -b.r, d, d);
+          ctx.restore();
+        } else {
+          ctx.drawImage(spr, b.x - b.r, b.y - b.r, d, d);
+        }
+      }
+    } else if (P.glow && balls.length <= 340) {
       for (let i = 0; i < balls.length; i++) {
         const b = balls[i], d = b.r * 2 * K;
         ctx.drawImage(sprite(colorOf(b)), b.x - d / 2, b.y - d / 2, d, d);
@@ -1518,6 +1597,18 @@
       ctx.arc(objX(o), objY(o), r + 10, 0, TAU);
       ctx.stroke();
     }
+    const sp = world.spawn;
+    if (sp) {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 26, 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sp.x - 40, sp.y); ctx.lineTo(sp.x + 40, sp.y);
+      ctx.moveTo(sp.x, sp.y - 40); ctx.lineTo(sp.x, sp.y + 40);
+      ctx.stroke();
+      ctx.setLineDash([12, 10]);
+    }
     if (drag && drag.start && drag.now) {
       ctx.strokeStyle = '#e8a33d';
       ctx.lineWidth = 8;
@@ -1559,14 +1650,17 @@
     ctx.fillText('BÄLLE', CX, 344);
 
     const w = 520, x = CX - w / 2, y = H - 168;
-    const p = Math.min(1, world.balls.length / Math.max(1, P.target));
+    // Im Anspielmodus ist die Sperre das eigentliche Ziel – das gehört ins Bild.
+    const ziel = anspielModus() && !unlocked ? freiAb() : P.target;
+    const p = Math.min(1, world.balls.length / Math.max(1, ziel));
     ctx.fillStyle = 'rgba(255,255,255,.14)';
     rrect(x, y, w, 10, 5); ctx.fill();
     ctx.fillStyle = pal[0];
     rrect(x, y, Math.max(10, w * p), 10, 5); ctx.fill();
     ctx.font = '500 26px "IBM Plex Mono", monospace';
     ctx.fillStyle = 'rgba(255,255,255,.5)';
-    ctx.fillText('ZIEL ' + P.target + '   ·   TREFFER ' + world.hits, CX, y + 46);
+    ctx.fillText((anspielModus() && !unlocked ? 'SONG BEI ' : 'ZIEL ') + ziel
+      + '   ·   TREFFER ' + world.hits, CX, y + 46);
   }
 
   /* ---------------------------------------------------------------- Klang
@@ -1911,9 +2005,13 @@
   };
   let songPos = 0, lastBeat = null, taps = [];
   let burstUntil = 0;                        // bis wann der laufende Schnipsel klingt
+  let unlocked = false, lastRestart = 0;     // für „anspielen bis Ziel“
 
   const songBereit = () => P.rhythm === 'song' && !!song.buffer;
   const schnipselModus = () => songBereit() && P.songMode === 'burst';
+  const anspielModus = () => songBereit() && P.songMode === 'unlock';
+  /** Ab wie vielen Bällen der Song durchlaufen darf. */
+  const freiAb = () => Math.max(2, P.unlockAt | 0);
 
   const fmtClock = (sec) =>
     Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
@@ -1923,7 +2021,7 @@
     if (songBereit() && song.period > 0) {
       // Im Schnipselbetrieb läuft der Song nicht durch – dann taktet die
       // Simulationsuhr mit dem erkannten Tempo der Datei.
-      if (P.songMode === 'burst') return { per: song.period, ph: 0, t: world.time };
+      if (P.songMode !== 'loop') return { per: song.period, ph: 0, t: world.time };
       return { per: song.period, ph: song.phase, t: songTime() };
     }
     return { per: 60 / Math.max(30, P.bpm), ph: 0, t: world.time };
@@ -1952,8 +2050,21 @@
   function stopSong() {
     if (!song.src) return;
     songPos = songTime();
-    try { song.src.stop(); } catch (e) { /* war schon zu Ende */ }
+    const quelle = song.src, g = song.gain;
+    try {
+      if (g && ac) {
+        // Kurz ausblenden: Ein hart abgeschnittener Song knackt.
+        const t = ac.currentTime;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(g.gain.value, t);
+        g.gain.linearRampToValueAtTime(0.0001, t + 0.012);
+        quelle.stop(t + 0.03);
+      } else {
+        quelle.stop();
+      }
+    } catch (e) { /* war schon zu Ende */ }
     song.src = null;
+    song.gain = null;
   }
 
   /* Der Song läuft nicht im Hintergrund, sondern rückt bei jedem Treffer um
@@ -1989,6 +2100,30 @@
 
     songPos = off + len;
     burstUntil = now + len;
+  }
+
+  /* Anspielen bis Ziel: Jeder Treffer wirft den Song zurück auf den Anfang –
+     bis genug Bälle da sind. Dann läuft er ein einziges Mal ganz durch. */
+  function playUnlock(b, kind) {
+    if (!ac || ac.state !== 'running' || !anspielModus()) return;
+    if (P.songTrigger === 'wall' && kind !== 'wall') return;
+    if (P.songTrigger === 'split' && kind !== 'split') return;
+    if (P.songTrigger === 'first' && b !== world.balls[0]) return;
+
+    if (world.balls.length >= freiAb()) {
+      if (!unlocked) { unlocked = true; songPos = P.songStart; startSong(P.songStart); }
+      return;                                  // ab jetzt nicht mehr unterbrechen
+    }
+    const now = ac.currentTime;
+    if (now - lastRestart < 0.09) return;      // sonst zerhackt es sich selbst
+    lastRestart = now;
+    songPos = P.songStart;
+    startSong(P.songStart);
+  }
+
+  function songHit(b, kind) {
+    playBurst(b, kind);
+    playUnlock(b, kind);
   }
 
   function onBeat() {
@@ -2125,7 +2260,8 @@
     const alsSong = P.rhythm === 'song';
     zeile('songMode', alsSong);
     zeile('burstLen', alsSong && P.songMode === 'burst');
-    zeile('songTrigger', alsSong && P.songMode === 'burst');
+    zeile('unlockAt', alsSong && P.songMode === 'unlock');
+    zeile('songTrigger', alsSong && P.songMode !== 'loop');
     zeile('songStart', alsSong);
     zeile('songVol', alsSong);
   }
@@ -2251,9 +2387,15 @@
     else { const asp = o.h / o.w; o.w = Math.max(20, v); o.h = o.w * asp; }
   }
 
+  /** Fängt Koordinaten auf ein 20-px-Raster, wenn eingeschaltet. */
+  const fang = (v) => (P.snap ? Math.round(v / 20) * 20 : v);
+
   function toWorld(e) {
     const r = canvas.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+    return {
+      x: fang(((e.clientX - r.left) / r.width) * W),
+      y: fang(((e.clientY - r.top) / r.height) * H),
+    };
   }
 
   function pick(p) {
@@ -2300,6 +2442,11 @@
       setFrames(o, pendingImg.frames);
       world.custom.push(o);
       select(o);
+      return;
+    }
+    if (tool === 'start') {
+      world.spawn = { x: p.x, y: p.y };
+      edHint('Startpunkt gesetzt – Neustart lässt die Bälle dort beginnen.');
       return;
     }
     if (tool === 'erase') { const o = pick(p); if (o) removeObj(o); return; }
@@ -2368,6 +2515,16 @@
     el('edSpin').value = String(spin);
     el('edSpinV').textContent = spin + ' °/s';
     el('edRotRow').hidden = selected.t === 'peg';
+    el('edSolid').checked = selected.solid !== false;
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise((ok, fehler) => {
+      const rd = new FileReader();
+      rd.onload = () => ok(rd.result);
+      rd.onerror = () => fehler(new Error('Datei nicht lesbar'));
+      rd.readAsDataURL(file);
+    });
   }
 
   function loadObstacleImage(file) {
@@ -2392,12 +2549,14 @@
 
   function levelData() {
     return {
-      v: 1,
+      v: 2,
+      start: world.spawn,
+      baelle: ballLooks.map((l) => l.src),
       objekte: world.custom.map((o) => (o.t === 'img'
-        ? { t: 'img', x: o.x, y: o.y, w: o.w, h: o.h, a: o.a, om: o.om, src: o.src }
+        ? { t: 'img', x: o.x, y: o.y, w: o.w, h: o.h, a: o.a, om: o.om, src: o.src, solid: o.solid !== false }
         : o.t === 'bar'
-          ? { t: 'bar', cx: o.cx, cy: o.cy, len: o.len, h: o.h, a: o.a, om: o.om }
-          : { t: 'peg', x: o.x, y: o.y, r: o.r, om: 0 })),
+          ? { t: 'bar', cx: o.cx, cy: o.cy, len: o.len, h: o.h, a: o.a, om: o.om, solid: o.solid !== false }
+          : { t: 'peg', x: o.x, y: o.y, r: o.r, om: 0, solid: o.solid !== false })),
     };
   }
 
@@ -2422,6 +2581,7 @@
       const o = {
         t: 'img', x: +roh.x, y: +roh.y, w: +roh.w, h: +roh.h,
         a: +roh.a || 0, om: +roh.om || 0, src: roh.src, img: null, mask: null,
+        solid: roh.solid !== false,
       };
       prepareImage(roh.src).then((vor) => {
         o.img = vor.img;
@@ -2432,10 +2592,12 @@
     } else if (roh.t === 'bar') {
       world.custom.push({
         t: 'bar', cx: +roh.cx, cy: +roh.cy, len: +roh.len,
-        h: +roh.h || 8, a: +roh.a || 0, om: +roh.om || 0,
+        h: +roh.h || 8, a: +roh.a || 0, om: +roh.om || 0, solid: roh.solid !== false,
       });
     } else if (roh.t === 'peg') {
-      world.custom.push({ t: 'peg', x: +roh.x, y: +roh.y, r: +roh.r || 20, om: 0 });
+      world.custom.push({
+        t: 'peg', x: +roh.x, y: +roh.y, r: +roh.r || 20, om: 0, solid: roh.solid !== false,
+      });
     }
   }
 
@@ -2450,8 +2612,16 @@
         world.custom.length = 0;
         selected = null;
         for (const roh of data.objekte) addLevelObject(roh);
+        world.spawn = data.start && isFinite(data.start.x) ? { x: +data.start.x, y: +data.start.y } : null;
+        if (Array.isArray(data.baelle)) {
+          ballLooks.length = 0;
+          for (const src of data.baelle.slice(0, 12)) {
+            prepareImage(src).then((vor) => { addBallLook(vor, src); ballLookHint(); }).catch(() => {});
+          }
+        }
         syncEditor();
-        edHint(world.custom.length + ' Hindernisse geladen.');
+        edHint(world.custom.length + ' Hindernisse geladen'
+          + (world.spawn ? ', Startpunkt gesetzt' : '') + '.');
       } catch (err) {
         edHint('Das war keine Prallwerk-Leveldatei.');
       }
@@ -2470,7 +2640,7 @@
       + '<button type="button" class="btn" data-tool="peg">Kreis</button>'
       + '<button type="button" class="btn" data-tool="img">Bild</button>'
       + '<button type="button" class="btn" data-tool="erase">Weg</button>'
-      + '<button type="button" class="btn" id="edClear">Leeren</button>'
+      + '<button type="button" class="btn" data-tool="start">Start</button>'
       + '</div>'
       + '<label class="filebtn wide" id="edImgBtn" style="margin-top:8px">'
       + 'Bild laden · PNG · animiertes GIF · JPG<input type="file"></label>'
@@ -2483,7 +2653,11 @@
       + '<input type="range" id="edRot" class="wide" min="-180" max="180" step="1"></div>'
       + '<div class="row"><label for="edSpin">Eigendrehung</label><span class="val" id="edSpinV"></span>'
       + '<input type="range" id="edSpin" class="wide" min="-180" max="180" step="5"></div>'
-      + '<div class="ed-actions"><button type="button" class="btn" id="edDel">Entfernen</button></div>'
+      + '<div class="row"><label for="edSolid">Kollision</label>'
+      + '<input type="checkbox" class="sw" id="edSolid"></div>'
+      + '<div class="ed-actions"><button type="button" class="btn" id="edDup">Kopie</button>'
+      + '<button type="button" class="btn" id="edBack">Nach hinten</button>'
+      + '<button type="button" class="btn" id="edDel">Entfernen</button></div>'
       + '</div>';
     return wrap;
   }
@@ -2492,7 +2666,8 @@
     const wrap = document.createElement('div');
     wrap.className = 'ed-actions';
     wrap.innerHTML = '<button type="button" class="btn" id="edSave">Level sichern</button>'
-      + '<label class="filebtn" id="edLoadBtn">Level laden<input type="file"></label>';
+      + '<label class="filebtn" id="edLoadBtn">Level laden<input type="file"></label>'
+      + '<button type="button" class="btn" id="edClear">Alles leeren</button>';
     return wrap;
   }
 
@@ -2506,9 +2681,10 @@
     });
     el('edClear').addEventListener('click', () => {
       world.custom.length = 0;
+      world.spawn = null;
       selected = null;
       syncEditor();
-      edHint('Alle eigenen Hindernisse entfernt.');
+      edHint('Eigene Hindernisse und Startpunkt entfernt.');
     });
     el('edImgBtn').querySelector('input').addEventListener('change', (e) => {
       loadObstacleImage(e.target.files && e.target.files[0]);
@@ -2520,6 +2696,23 @@
     });
     el('edSave').addEventListener('click', saveLevel);
     el('edDel').addEventListener('click', () => { if (selected) removeObj(selected); });
+    el('edSolid').addEventListener('change', (e) => {
+      if (selected) selected.solid = e.target.checked;
+    });
+    el('edDup').addEventListener('click', () => {
+      if (!selected) return;
+      // Flache Kopie: Maske, Bild und Einzelbilder werden geteilt, nicht kopiert.
+      const k = Object.assign({}, selected);
+      setObjPos(k, objX(k) + 40, objY(k) + 40);
+      world.custom.push(k);
+      select(k);
+    });
+    el('edBack').addEventListener('click', () => {
+      if (!selected) return;
+      const i = world.custom.indexOf(selected);
+      if (i > 0) { world.custom.splice(i, 1); world.custom.unshift(selected); }
+      syncEditor();
+    });
     el('edSize').addEventListener('input', (e) => {
       if (selected) { setObjSize(selected, +e.target.value); syncEditor(); }
     });
@@ -2558,9 +2751,10 @@
       title: 'Form', hint: 'Rahmen',
       rows: [
         sel('shape', 'Form', Object.keys(SHAPES).map((k) => [k, SHAPES[k].name]), rebuildAll),
-        rng('size', 'Größe', 0.5, 0.98, 0.01, pct, rebuildAll),
+        rng('size', 'Größe', 0.5, 1, 0.01, pct, rebuildAll),
         rng('spin', 'Eigendrehung', -90, 90, 1, deg, () => { world.om = (P.spin * Math.PI) / 180; }),
         rng('wall', 'Wandstärke', 4, 30, 1, px),
+        tog('wallShow', 'Rahmen zeigen'),
       ],
     },
     {
@@ -2615,6 +2809,8 @@
         sel('bg', 'Hintergrund', [
           ['studio', 'Studioverlauf'], ['black', 'Tiefschwarz'], ['grid', 'Raster'],
         ], paintBackground),
+        { kind: 'custom', build: ballLookRow },
+        tog('ballRoll', 'Ballbilder rollen mit'),
         tog('glow', 'Leuchten'),
         tog('sparks', 'Funken'),
         tog('shake', 'Bildwackeln'),
@@ -2633,6 +2829,7 @@
       rows: [
         { kind: 'custom', build: editorPanel },
         rng('editSize', 'Größe für Neues', 10, 300, 2, px),
+        tog('snap', 'Am Raster fangen'),
         { kind: 'custom', build: levelActions },
       ],
     },
@@ -2680,7 +2877,9 @@
         { kind: 'custom', build: fileRow },
         { kind: 'custom', build: statusRow },
         sel('songMode', 'Abspielweise', [
-          ['burst', 'Schnipsel bei Treffer'], ['loop', 'Durchgehend im Hintergrund'],
+          ['unlock', 'Anspielen bis Ziel, dann ganz'],
+          ['burst', 'Schnipsel bei Treffer'],
+          ['loop', 'Durchgehend im Hintergrund'],
         ], () => {
           refreshRhythm();
           stopSong();
@@ -2689,6 +2888,7 @@
           if (P.songMode === 'loop' && songBereit() && world.running) startSong(songPos);
         }),
         rng('burstLen', 'Schnipsellänge', 0.05, 1, 0.01, (v) => Math.round(v * 1000) + ' ms'),
+        rng('unlockAt', 'Song frei ab', 2, 500, 1, (v) => v + ' Bällen'),
         sel('songTrigger', 'Schnipsel bei', [
           ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'],
           ['first', 'Nur dem ersten Ball'], ['split', 'Jeder Teilung'],
@@ -2763,6 +2963,47 @@
     l.appendChild(i);
     row.appendChild(l);
     return row;
+  }
+
+  function ballLookRow() {
+    const wrap = document.createElement('div');
+    wrap.innerHTML =
+      '<label class="filebtn wide" id="ballImgBtn" style="margin-top:6px">'
+      + 'Ballbild hinzufügen · PNG GIF JPG<input type="file"></label>'
+      + '<div class="row"><span class="status" id="ballImgHint"></span></div>'
+      + '<div class="ed-actions" id="ballImgClearWrap" hidden>'
+      + '<button type="button" class="btn" id="ballImgClear">Ballbilder leeren</button></div>';
+    return wrap;
+  }
+
+  function ballLookHint(text) {
+    const n = el('ballImgHint');
+    if (!n) return;
+    const viele = ballLooks.length;
+    n.textContent = text || (viele
+      ? viele + (viele === 1 ? ' Ballbild' : ' Ballbilder') + ' – die Bälle wechseln sie durch.'
+      : 'Ohne eigenes Bild bleiben es farbige Leuchtkugeln.');
+    n.classList.toggle('on', viele > 0);
+    const w = el('ballImgClearWrap');
+    if (w) w.hidden = !viele;
+  }
+
+  function wireBallLooks() {
+    el('ballImgBtn').querySelector('input').addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      ballLookHint('Lese ' + f.name + ' …');
+      try {
+        const src = await readAsDataUrl(f);
+        addBallLook(await prepareImage(src), src);
+        ballLookHint();
+      } catch (err) {
+        ballLookHint('Dieses Bild ließ sich nicht laden.');
+      }
+    });
+    el('ballImgClear').addEventListener('click', () => { ballLooks.length = 0; ballLookHint(); });
+    ballLookHint();
   }
 
   function midiRow() {
@@ -2982,6 +3223,10 @@
     el('mSeed').textContent = String(seed).padStart(4, '0');
     melStatus();
     if (schnipselModus() && song.label) songStatus(song.label + ' · bei ' + fmtClock(songPos), true);
+    else if (anspielModus() && song.label) {
+      songStatus(song.label + (unlocked ? ' · läuft durch'
+        : ' · frei ab ' + freiAb() + ' Bällen (noch ' + Math.max(0, freiAb() - world.balls.length) + ')'), true);
+    }
   }
   /* Die Schiene bekommt genau die Höhe, die unter dem Kopf frei ist – so ist
      sie auch ungescrollt vollständig sichtbar und scrollt nur in sich selbst. */
@@ -3045,6 +3290,7 @@
   buildRail();
   buildPresets();
   wireEditor();
+  wireBallLooks();
   el('presets').firstElementChild.setAttribute('aria-pressed', 'true');
   setRes(P.outRes);
   reset();

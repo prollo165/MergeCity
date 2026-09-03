@@ -24,10 +24,10 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | --- | --- |
 | **Form** | Kreis, Stern, Herz, Kapsel … samt Größe und Eigendrehung. Eine drehende Wand überträgt ihren Schwung auf den Ball. |
 | **Barrieren** | Ringe mit Lücke, Plinko-Pins, rotierende Balken, Kreuz-Spinner, Zickzack, kreisende Kugeln. |
-| **Editor** | Eigene Balken, Kreise und **Bilder (PNG/GIF/JPG)** direkt ins Bild setzen, verschieben, drehen, drehen lassen. Level als Datei sichern und laden. |
+| **Editor** | Eigene Balken, Kreise und **Bilder (PNG/GIF/JPG)** direkt ins Bild setzen, verschieben, drehen, drehen lassen, Startpunkt legen, am Raster fangen. Level als Datei sichern und laden. |
 | **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, **Anzahl der Startbälle**, Ballgröße, Zeitlupe – und ob die Bälle **voneinander abprallen**. |
 | **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren / **nur bei Ballkontakt**), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
-| **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
+| **Optik** | Palette, Farbwechsel-Modus, **eigene Ballbilder**, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
 | **Melodie** | Jeder Aufschlag rückt eine Note weiter – die Bälle spielen das Lied. Quelle: eingebaute Melodie, MIDI-Datei oder Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
 | **Rhythmus** | Taktquelle wählen (BPM-Taktgeber oder Audiodatei). Der geladene Song läuft entweder durchgehend im Hintergrund oder **schnipselweise bei jedem Treffer**. Auf der Zählzeit pulsiert die Form, wechselt die Farbe, teilen sich Bälle. |
@@ -113,7 +113,13 @@ Deshalb zwei Wege, die wirklich funktionieren:
    Trefferklänge und landet damit auch in der Aufnahme.
    Für die Wiedergabe gibt es zwei Weisen:
 
-   - **Schnipsel bei Treffer** (Voreinstellung): Der Song läuft *nicht* im
+   - **Anspielen bis Ziel, dann ganz** (Voreinstellung): Jeder Treffer wirft
+     den Song zurück auf den Anfang – er kommt also nie über die ersten
+     Sekunden hinaus. Erst wenn genug Bälle da sind (Regler *Song frei ab*),
+     läuft er ein einziges Mal durch. Solange die Sperre gilt, zeigt der
+     Fortschrittsbalken im Bild „SONG BEI n" statt der Zielmarke – das Video
+     erklärt sich damit von selbst.
+   - **Schnipsel bei Treffer**: Der Song läuft *nicht* im
      Hintergrund, sondern rückt bei jedem Aufschlag um einen Schnipsel vor –
      das Stück wird also erst durch die Bälle hörbar, Stück für Stück. Länge
      einstellbar (50 ms bis 1 s), auslösbar durch jeden Treffer, nur
@@ -138,14 +144,31 @@ Garantie: Aufschläge exakt auf ein Raster zu zwingen ginge nur, indem man die
 Physik fälscht oder die Wände passend zur Musik konstruiert. Der musikalische
 Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 
+## Eigene Ballbilder
+
+Im Modul *Optik* lassen sich beliebig viele Bilder als Ballaussehen laden.
+Jedes wird einmal kreisrund vorgerendert (formatfüllend zugeschnitten), die
+Bälle greifen sie über ihren Farbindex ab und wechseln sie also durch.
+Animierte GIFs bekommen je Einzelbild eine eigene Scheibe. Mit *Ballbilder
+rollen mit* dreht sich das Bild passend zur Bewegung; oberhalb von 220 Bällen
+wird die Drehung ausgelassen. Der farbige Schein bleibt unter dem Bild
+erhalten, solange *Leuchten* an ist.
+
 ## Editor
 
 Der Knopf **Bearbeiten** unter der Bühne hält die Simulation an und legt das
 Bild frei: Werkzeug wählen, ins Bild tippen. Es gibt Balken (Strich ziehen),
-Kreise (tippen) und Bilder. Ausgewählte Hindernisse lassen sich verschieben,
-in Größe und Drehung ändern und mit einer Eigendrehung versehen. Alles bleibt
-beim Neustart erhalten – es ist Level, keine Spielsituation – und wird von
-derselben Kollisionsroutine behandelt wie die erzeugten Barrieren.
+Kreise (tippen), Bilder und den **Startpunkt**, an dem die Bälle beginnen.
+Ausgewählte Hindernisse lassen sich verschieben, in Größe und Drehung ändern,
+mit einer Eigendrehung versehen, kopieren, nach hinten legen und auf reine
+**Deko ohne Kollision** stellen. Alles bleibt beim Neustart erhalten – es ist
+Level, keine Spielsituation – und wird von derselben Kollisionsroutine
+behandelt wie die erzeugten Barrieren.
+
+Für eine **von Grund auf eigene Szene**: Form auf *Rahmen (ganzes Bild)*
+stellen, *Rahmen zeigen* ausschalten, Barrieren auf *Keine* – dann ist das
+Bild leer und hält die Bälle trotzdem drin. *Am Raster fangen* setzt auf 20 px
+genau.
 
 **Bilder kollidieren entlang ihrer Alphakante.** Beim Laden entsteht aus dem
 Alphakanal ein vorzeichenbehaftetes Abstandsfeld: 96 Rasterzellen in der
@@ -195,7 +218,13 @@ nicht im Video landen.
   Editor: dass das Abstandsfeld eines Kreisbildes mit der Geometrie
   übereinstimmt, dass Bälle daran abprallen, dass eigene Hindernisse den
   Neustart überstehen, dass mehrere Startbälle nebeneinander liegen und dass
-  GIF-Einzelbilder nach ihren eigenen Zeiten weiterlaufen.
+  GIF-Einzelbilder nach ihren eigenen Zeiten weiterlaufen. Dazu: dass der Song
+  erst ab der Zielzahl freigegeben wird, dass der Rahmen die Bälle im ganzen
+  Bild hält, dass ein selbst gesetzter Startpunkt gilt und dass Deko ohne
+  Kollision nichts ablenkt.
+
+  Alle Tests laufen mit festem Seed (4711) und setzen jeden Regler zurück –
+  sonst hinge ihr Ergebnis am Test davor.
 
 Das GIF-Zerlegen selbst braucht einen echten Browser (`ImageDecoder`) und
 steckt deshalb nicht im Node-Test; es wurde über das DevTools-Protokoll in
