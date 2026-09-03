@@ -28,13 +28,45 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
 | **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
-| **Ton** | Jeder Treffer spielt die nächste Note einer Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
+| **Melodie** | Jeder Aufschlag rückt eine Note weiter – die Bälle spielen das Lied. Quelle: eingebaute Melodie, MIDI-Datei oder Tonleiter. Startet nach dem ersten Klick (Browser-Regel). |
 | **Rhythmus** | Taktquelle wählen (BPM-Taktgeber oder Audiodatei), dann pulsiert die Form, wechselt die Farbe, teilen sich Bälle oder springen im Takt. |
 | **Export** | Auflösung, Bitrate, Länge. `Aufnahme` startet den Lauf neu und stoppt automatisch. |
 
 Tasten: `Leertaste` Start/Pause, `R` Neustart, `N` neuer Seed.
 
-## Rhythmus: warum kein Spotify-Link
+## Die Bälle spielen das Lied
+
+Das ist der Kern: Jeder Aufschlag rückt die Melodie **um eine Note weiter** und
+spielt sie. Der Rhythmus kommt also aus der Physik, die Tonhöhen aus der Vorlage
+– genau so entstehen die bekannten Clips.
+
+Drei Notenquellen:
+
+- **Eingebaute Melodie** – sechs gemeinfreie Stücke (Korobeiniki, Für Elise,
+  Ode an die Freude, In der Halle des Bergkönigs, Carol of the Bells, Alle meine
+  Entchen). Kein Download nötig.
+- **MIDI-Datei** – lädt jedes `.mid`. Aus allen Spuren außer dem Schlagzeugkanal
+  werden die Note-Ons gesammelt, nach Zeit sortiert und je Zeitpunkt der höchste
+  Ton genommen: In fast jedem Satz liegt die Melodie in der Oberstimme. Ergebnis
+  ist eine einstimmige Notenfolge. Der Parser sitzt in `app.html` (`parseMidi`)
+  und kommt ohne Bibliothek aus.
+- **Tonleiter** – die alte Variante: aufsteigende Pentatonik, Dur, Moll.
+
+Dazu fünf synthetisierte Klänge (Marimba, Klavier, Glocke, Zupf, Blip), eine
+Auslösewahl (jeder Treffer / nur Wandtreffer / nur der erste Ball) und eine
+**Notenrate**: Bei zweihundert Bällen prasseln die Treffer schneller, als eine
+Melodie verträgt – die Rate deckelt das, ohne die Physik anzufassen. Für einen
+sauber erkennbaren Song sind wenige Bälle oder „nur der erste Ball" die richtige
+Wahl; für Krawall dreht man die Rate hoch.
+
+### Aus einer MP3 geht das nicht
+
+Eine Melodie aus einer fertigen Aufnahme zurückzurechnen (Polyphonic Music
+Transcription) ist ein offenes Forschungsproblem – im Browser erst recht. Eine
+MIDI-Datei dagegen *ist* die Notenschrift, deshalb dieser Weg. MIDI-Dateien zu
+bekannten Liedern findet man über „<Titel> midi".
+
+## Rhythmus: Takt fürs Bild, warum kein Spotify-Link
 
 Streaming-Dienste geben ihren Ton nicht heraus. Spotify, Apple Music und
 YouTube liefern ihn DRM-geschützt über Encrypted Media Extensions aus – der
@@ -57,10 +89,13 @@ Deshalb zwei Wege, die wirklich funktionieren:
    CapCut oder InShot unter das fertige Video gelegt wird – dann muss nur das
    Tempo stimmen. BPM-Werte findest du z. B. bei songbpm.com.
 
-`Bälle springen im Takt` regelt die Ballgeschwindigkeit nach jedem Aufschlag
-sanft nach (±15 %), bis die Treffer auf dem Taktraster landen. Das ist eine
-Regelung, keine Garantie: Bei sehr verwinkelten Formen bleibt ein Rest
-Unruhe – dafür bleibt die Physik echt.
+`Bälle springen im Takt` regelt die Ballgeschwindigkeit nach jedem Wandtreffer
+um höchstens ein Viertel nach, bis die Aufschläge aufs Taktraster wandern. Das
+greift nur bei bis zu zwölf Bällen und nur an der Wand – an rotierenden
+Barrieren ist die Flugzeit zu unberechenbar. Es ist eine Regelung, keine
+Garantie: Aufschläge exakt auf ein Raster zu zwingen ginge nur, indem man die
+Physik fälscht oder die Wände passend zur Musik konstruiert. Der musikalische
+Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 
 ## Aufbau
 
@@ -70,10 +105,15 @@ Unruhe – dafür bleibt die Physik echt.
 - `build.mjs` – legt genau diesen Rahmen darum und schreibt `index.html`.
 - `index.html` – erzeugt, eingecheckt, für den Doppelklick-Betrieb.
 
+- `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
+  gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
+  Status, abgeschnittene Dateien).
+
 Nach jeder Änderung an `app.html`:
 
 ```bash
-npm run bounce:build
+npm run bounce:build     # index.html neu schreiben
+npm run bounce:test      # MIDI-Leser prüfen
 ```
 
 ## Technik in Kürze

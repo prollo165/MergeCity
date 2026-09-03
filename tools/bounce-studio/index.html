@@ -371,7 +371,8 @@
     palette: 'neon', colorMode: 'hit', trail: 55, glow: true, sparks: true,
     shake: true, bg: 'studio',
     hud: true, hudTitle: 'WIE VIELE WERDEN ES?', target: 180,
-    sound: true, scale: 'penta', volume: 45,
+    melSrc: 'builtin', melPick: 'korobeiniki', scale: 'penta',
+    instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
     beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
     outRes: 720, bitrate: 4, recLimit: 15,
@@ -683,6 +684,8 @@
     ));
     lastBeat = null;
     world.beats = 0;
+    mel.pos = -1;
+    mel.last = 0;
     if (P.rhythm === 'song' && song.buffer) {
       stopSong();
       songPos = P.songStart;
@@ -847,9 +850,11 @@
     if (P.shake) world.shake = Math.min(1, world.shake + 0.3);
     if (P.sparks) addSparks(x, y, colorOf(b));
     addRipple(x, y);
-    playNote(b);
+    playNote(b, kind);
     maybeSplit(b, kind);
-    if (P.beatLock) lockToBeat(b);
+    // Das Nachziehen aufs Taktraster greift nur bei wenigen Bällen und an der
+    // Wand – an rotierenden Barrieren ist die Flugzeit zu unberechenbar.
+    if (P.beatLock && kind === 'wall' && world.balls.length <= 12) lockToBeat(b);
   }
 
   /* Regelt die Ballgeschwindigkeit sanft nach, bis die Aufschläge auf dem
@@ -859,7 +864,7 @@
     if (!bi) return;
     let err = (((world.beatT - bi.ph) % bi.per) + bi.per) % bi.per;
     if (err > bi.per / 2) err -= bi.per;
-    const f = Math.max(0.87, Math.min(1.15, 1 + (err / bi.per) * 0.5));
+    const f = Math.max(0.8, Math.min(1.24, 1 + (err / bi.per) * 0.8));
     const sp = Math.hypot(b.vx, b.vy) || 1;
     const ns = Math.max(P.startSpeed * 0.35, Math.min(P.startSpeed * 2.6, sp * f));
     const k = ns / sp;
@@ -1121,14 +1126,176 @@
     ctx.fillText('ZIEL ' + P.target + '   ·   TREFFER ' + world.hits, CX, y + 46);
   }
 
-  /* ---------------------------------------------------------------- Ton */
-  let ac = null, master = null, recDest = null, lastNote = 0;
+  /* ---------------------------------------------------------------- Klang
+     Die Bälle spielen die Melodie: Jeder Aufschlag rückt eine Note weiter.
+     Notenquelle ist eine Tonleiter, eine eingebaute Melodie oder eine
+     MIDI-Datei. Aus einer MP3 lässt sich eine Melodie nicht herauslösen –
+     Mehrstimmiges zuverlässig in Noten zurückzurechnen kann heute keine
+     Software im Browser. MIDI dagegen ist die Notenschrift selbst. */
+  let ac = null, master = null, recDest = null, lastVoice = 0;
   const SCALES = {
     penta: [0, 2, 4, 7, 9],
     minor: [0, 2, 3, 5, 7, 8, 10],
     major: [0, 2, 4, 5, 7, 9, 11],
     blip: [0, 5, 12],
   };
+
+  /* Gemeinfreie Melodien, als MIDI-Notennummern. */
+  const MELODIES = {
+    korobeiniki: { name: 'Korobeiniki', notes: [
+      76, 71, 72, 74, 72, 71, 69, 69, 72, 76, 74, 72, 71, 72, 74, 76, 72, 69, 69,
+      74, 77, 81, 79, 77, 76, 72, 76, 74, 72, 71, 71, 72, 74, 76, 72, 69, 69] },
+    elise: { name: 'Für Elise', notes: [
+      76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69, 71, 64, 68, 71, 72, 64,
+      76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69, 71, 64, 72, 71, 69] },
+    ode: { name: 'Ode an die Freude', notes: [
+      64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62,
+      64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 62, 60, 60] },
+    bergkoenig: { name: 'In der Halle des Bergkönigs', notes: [
+      59, 61, 62, 64, 62, 61, 59, 55, 59, 55, 59, 61, 62, 64, 62, 61,
+      59, 55, 59, 55, 62, 64, 66, 67, 66, 64, 62, 59, 62, 59, 62, 64] },
+    carol: { name: 'Carol of the Bells', notes: [
+      69, 68, 69, 65, 69, 68, 69, 65, 69, 68, 69, 65, 69, 68, 69, 65,
+      72, 69, 72, 69, 72, 71, 72, 69, 69, 68, 69, 65] },
+    entchen: { name: 'Alle meine Entchen', notes: [
+      60, 62, 64, 65, 67, 67, 69, 69, 69, 69, 67, 69, 69, 69, 69, 67,
+      65, 65, 65, 65, 64, 64, 62, 62, 62, 62, 60] },
+  };
+
+  const mel = { notes: [], name: '', pos: -1, last: 0 };
+  let midiNotes = [], midiName = '';
+
+  function scaleNotes() {
+    const sc = SCALES[P.scale] || SCALES.penta;
+    const out = [];
+    for (let o = 0; o < 3; o++) for (const n of sc) out.push(55 + n + 12 * o);
+    return out;
+  }
+
+  function refreshMelody() {
+    if (P.melSrc === 'builtin') {
+      const m = MELODIES[P.melPick] || MELODIES.korobeiniki;
+      mel.notes = m.notes; mel.name = m.name;
+    } else if (P.melSrc === 'midi') {
+      mel.notes = midiNotes; mel.name = midiName || 'MIDI';
+    } else if (P.melSrc === 'scale') {
+      mel.notes = scaleNotes(); mel.name = 'Tonleiter';
+    } else {
+      mel.notes = []; mel.name = '';
+    }
+    mel.pos = -1;
+    const show = (key, on) => {
+      const c = el('c_' + key);
+      const row = c && c.closest('.row');
+      if (row) row.hidden = !on;
+    };
+    show('melPick', P.melSrc === 'builtin');
+    show('scale', P.melSrc === 'scale');
+    const midi = el('midiRow');
+    if (midi) midi.hidden = P.melSrc !== 'midi';
+    melStatus();
+  }
+
+  function melStatus() {
+    const n = el('melStatus');
+    if (!n) return;
+    if (!mel.notes.length) {
+      n.textContent = P.melSrc === 'midi'
+        ? 'Noch keine MIDI-Datei geladen. MIDI-Dateien zu bekannten Liedern findest du z. B. über „<Titel> midi" in der Suche.'
+        : 'Stumm – die Treffer bleiben lautlos.';
+      n.classList.remove('on');
+      return;
+    }
+    n.textContent = mel.name + ' · Note ' + (Math.max(0, mel.pos) + 1) + ' von ' + mel.notes.length;
+    n.classList.add('on');
+  }
+
+  /* --- MIDI lesen -------------------------------------------------------
+     Aus allen Spuren (ohne Schlagzeugkanal 10) werden die Note-Ons gesammelt,
+     nach Zeit sortiert und je Zeitpunkt der höchste Ton genommen: In fast
+     jedem Satz liegt die Melodie in der Oberstimme. */
+  function parseMidi(bytes) {
+    const dv = new DataView(bytes);
+    let pos = 0;
+    // Alle Lesezugriffe laufen über u8: Eine abgeschnittene oder kaputte Datei
+    // soll eine Fehlermeldung ergeben, keinen Absturz.
+    const u8 = () => (pos < dv.byteLength ? dv.getUint8(pos++) : (pos++, 0));
+    const tag = () => String.fromCharCode(u8(), u8(), u8(), u8());
+    const u32 = () => ((u8() << 24) | (u8() << 16) | (u8() << 8) | u8()) >>> 0;
+    const u16 = () => (u8() << 8) | u8();
+    const varlen = () => {
+      let v = 0, b, n = 0;
+      do { b = u8(); v = (v << 7) | (b & 0x7f); } while (b & 0x80 && ++n < 4 && pos < dv.byteLength);
+      return v;
+    };
+
+    if (dv.byteLength < 14 || tag() !== 'MThd') throw new Error('Kein MIDI-Kopf');
+    const hlen = u32();
+    u16();                       // Format
+    const ntrk = u16();
+    const div = u16();
+    pos += hlen - 6;
+    const tpq = div & 0x8000 ? 480 : div || 480;
+
+    const events = [];
+    for (let t = 0; t < ntrk && pos + 8 <= dv.byteLength; t++) {
+      if (tag() !== 'MTrk') break;
+      const len = u32();
+      const end = Math.min(pos + len, dv.byteLength);
+      let tick = 0, running = 0;
+      while (pos < end) {
+        tick += varlen();
+        if (pos >= end) break;                 // Spurende erreicht
+        let status = dv.getUint8(pos);
+        if (status & 0x80) { pos++; running = status; } else { status = running; }
+        const type = status & 0xf0;
+        if (status === 0xff) {
+          u8();                                // Meta-Typ
+          pos += varlen();
+        } else if (status === 0xf0 || status === 0xf7) {
+          pos += varlen();
+        } else if (type === 0x90 || type === 0x80) {
+          const note = u8(), vel = u8();
+          if (type === 0x90 && vel > 0 && (status & 0x0f) !== 9) events.push({ tick, note });
+        } else if (type === 0xa0 || type === 0xb0 || type === 0xe0) { pos += 2; }
+        else if (type === 0xc0 || type === 0xd0) { pos += 1; }
+        else break;                            // unbekannter Status – Spur abbrechen
+      }
+      pos = end;
+    }
+    if (!events.length) throw new Error('Keine Noten gefunden');
+
+    events.sort((a, b) => a.tick - b.tick || b.note - a.note);
+    const tol = Math.max(1, tpq / 16);
+    const out = [];
+    let curTick = -1e9, curTop = -1;
+    for (const e of events) {
+      if (e.tick - curTick > tol) {
+        if (curTop >= 0) out.push(curTop);
+        curTick = e.tick; curTop = e.note;
+      } else if (e.note > curTop) curTop = e.note;
+    }
+    if (curTop >= 0) out.push(curTop);
+    return out.slice(0, 2000);
+  }
+
+  async function loadMidi(file) {
+    if (!file) return;
+    audioResume();
+    const n = el('melStatus');
+    if (n) { n.textContent = 'Lese ' + file.name + ' …'; n.classList.remove('on'); }
+    try {
+      const notes = parseMidi(await file.arrayBuffer());
+      if (notes.length < 4) throw new Error('zu kurz');
+      midiNotes = notes;
+      midiName = file.name.replace(/\.midi?$/i, '');
+      P.melSrc = 'midi';
+      controls.melSrc();
+      refreshMelody();
+    } catch (e) {
+      if (n) { n.textContent = 'Das war keine lesbare MIDI-Datei (.mid).'; n.classList.remove('on'); }
+    }
+  }
   function audioInit() {
     if (ac) return ac;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -1144,23 +1311,80 @@
     audioInit();
     if (ac && ac.state === 'suspended') ac.resume();
   }
-  function playNote(b) {
-    if (!P.sound || !ac || ac.state !== 'running') return;
+  /** Ein Aufschlag rückt die Melodie um eine Note weiter und spielt sie. */
+  function playNote(b, kind) {
+    if (!ac || ac.state !== 'running' || !mel.notes.length) return;
+    if (P.melTrigger === 'wall' && kind !== 'wall') return;
+    if (P.melTrigger === 'first' && b !== world.balls[0]) return;
     const now = ac.currentTime;
-    if (now - lastNote < 0.022) return;      // Stimmenbegrenzung gegen Matsch
-    lastNote = now;
-    const sc = SCALES[P.scale] || SCALES.penta;
-    const i = Math.max(0, world.hits - 1);
-    const semi = sc[i % sc.length] + 12 * (Math.floor(i / sc.length) % 3);
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = P.scale === 'blip' ? 'square' : 'triangle';
-    o.frequency.value = 196 * Math.pow(2, semi / 12);
-    const vol = (P.volume / 100) * 0.16 * (song.src ? 0.45 : 1);
+    // Bei hundert Bällen prasseln die Treffer schneller als eine Melodie
+    // verträgt – die Notenrate deckelt das, ohne die Physik anzufassen.
+    if (now - mel.last < 1 / Math.max(1, P.melRate)) return;
+    mel.last = now;
+    mel.pos = (mel.pos + 1) % mel.notes.length;
+    playTone(mel.notes[mel.pos], now);
+  }
+
+  function env(g, now, peak, atk, dec) {
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), now + 0.006);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
-    o.connect(g); g.connect(master);
-    o.start(now); o.stop(now + 0.3);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), now + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + atk + dec);
+  }
+
+  function playTone(midi, now) {
+    const f = 440 * Math.pow(2, (midi - 69) / 12);
+    const vol = (P.volume / 100) * 0.2 * (song.src ? 0.55 : 1);
+    const g = ac.createGain();
+    g.connect(master);
+    lastVoice = now;
+
+    if (P.instrument === 'glocke') {
+      const car = ac.createOscillator(), mod = ac.createOscillator(), mg = ac.createGain();
+      car.frequency.value = f;
+      mod.frequency.value = f * 3.5;
+      mg.gain.value = f * 2.2;
+      mod.connect(mg); mg.connect(car.frequency); car.connect(g);
+      env(g, now, vol * 0.8, 0.003, 1.5);
+      car.start(now); mod.start(now);
+      car.stop(now + 1.6); mod.stop(now + 1.6);
+
+    } else if (P.instrument === 'pluck') {
+      const o = ac.createOscillator(), lp = ac.createBiquadFilter();
+      o.type = 'sawtooth'; o.frequency.value = f;
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(Math.min(12000, f * 9), now);
+      lp.frequency.exponentialRampToValueAtTime(Math.max(220, f * 1.3), now + 0.28);
+      o.connect(lp); lp.connect(g);
+      env(g, now, vol, 0.002, 0.42);
+      o.start(now); o.stop(now + 0.5);
+
+    } else if (P.instrument === 'klavier') {
+      const a = ac.createOscillator(), b2 = ac.createOscillator(), bg = ac.createGain();
+      a.type = 'triangle'; b2.type = 'triangle';
+      a.frequency.value = f; b2.frequency.value = f * 2.004;
+      bg.gain.value = 0.32;
+      b2.connect(bg); bg.connect(g); a.connect(g);
+      env(g, now, vol, 0.004, 1.0);
+      a.start(now); b2.start(now);
+      a.stop(now + 1.1); b2.stop(now + 1.1);
+
+    } else if (P.instrument === 'blip') {
+      const o = ac.createOscillator();
+      o.type = 'square'; o.frequency.value = f;
+      o.connect(g);
+      env(g, now, vol * 0.55, 0.002, 0.14);
+      o.start(now); o.stop(now + 0.2);
+
+    } else {                                   // Marimba
+      const o = ac.createOscillator(), h = ac.createOscillator(), hg = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      h.type = 'sine'; h.frequency.value = f * 4;
+      hg.gain.value = 0.16;
+      h.connect(hg); hg.connect(g); o.connect(g);
+      env(g, now, vol, 0.002, 0.5);
+      o.start(now); h.start(now);
+      o.stop(now + 0.6); h.stop(now + 0.6);
+    }
   }
 
   /* ---------------------------------------------------------------- Rhythmus
@@ -1368,7 +1592,7 @@
     setRunning(true);
 
     const tracks = canvas.captureStream(60).getVideoTracks();
-    if (P.sound && recDest) tracks.push(...recDest.stream.getAudioTracks());
+    if (recDest) tracks.push(...recDest.stream.getAudioTracks());
     try {
       recorder = new MediaRecorder(new MediaStream(tracks), {
         mimeType: type,
@@ -1526,12 +1750,27 @@
       ],
     },
     {
-      title: 'Ton', hint: 'nach erstem Klick',
+      title: 'Melodie', hint: 'die Bälle spielen',
       rows: [
-        tog('sound', 'Treffer klingen', audioResume),
+        sel('melSrc', 'Notenquelle', [
+          ['builtin', 'Eingebaute Melodie'], ['midi', 'MIDI-Datei'],
+          ['scale', 'Tonleiter (aufsteigend)'], ['off', 'Stumm'],
+        ], () => { audioResume(); refreshMelody(); }),
+        sel('melPick', 'Melodie', Object.keys(MELODIES).map((k) => [k, MELODIES[k].name]),
+          () => { P.melSrc = 'builtin'; controls.melSrc(); refreshMelody(); }),
+        { kind: 'custom', build: midiRow },
+        { kind: 'custom', build: melStatusRow },
         sel('scale', 'Tonleiter', [
-          ['penta', 'Pentatonik'], ['major', 'Dur'], ['minor', 'Moll'], ['blip', 'Blip'],
+          ['penta', 'Pentatonik'], ['major', 'Dur'], ['minor', 'Moll'], ['blip', 'Dreiklang'],
+        ], refreshMelody),
+        sel('instrument', 'Klang', [
+          ['marimba', 'Marimba'], ['klavier', 'Klavier'], ['glocke', 'Glocke'],
+          ['pluck', 'Zupf'], ['blip', 'Blip'],
         ]),
+        sel('melTrigger', 'Gespielt wird bei', [
+          ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'], ['first', 'Nur dem ersten Ball'],
+        ]),
+        rng('melRate', 'Noten je Sekunde', 2, 20, 1, (v) => v + ' /s'),
         rng('volume', 'Lautstärke', 0, 100, 1, (v) => v + ' %'),
       ],
     },
@@ -1619,6 +1858,32 @@
     i.addEventListener('change', () => { loadSong(i.files && i.files[0]); i.value = ''; });
     l.appendChild(i);
     row.appendChild(l);
+    return row;
+  }
+
+  function midiRow() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.id = 'midiRow';
+    const l = document.createElement('label');
+    l.className = 'filebtn wide';
+    l.textContent = 'MIDI-Datei laden · .mid';
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = '.mid,.midi,audio/midi,audio/x-midi';
+    i.addEventListener('change', () => { loadMidi(i.files && i.files[0]); i.value = ''; });
+    l.appendChild(i);
+    row.appendChild(l);
+    return row;
+  }
+
+  function melStatusRow() {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const n = document.createElement('span');
+    n.className = 'status';
+    n.id = 'melStatus';
+    row.appendChild(n);
     return row;
   }
 
@@ -1723,37 +1988,37 @@
       gravity: 2400, bounce: 1, startSpeed: 850, ballSize: 26, tempo: 1,
       split: 'chance', splitChance: 18, maxBalls: 180, spread: 30, shrink: true,
       palette: 'neon', colorMode: 'hit', trail: 55, bg: 'studio', target: 180,
-      hudTitle: 'WIE VIELE WERDEN ES?', scale: 'penta' } },
+      hudTitle: 'WIE VIELE WERDEN ES?', melSrc: 'builtin', melPick: 'korobeiniki', instrument: 'marimba' } },
     { id: 'plinko', name: 'Plinko-Regen', patch: {
       shape: 'squircle', size: 0.94, spin: 0, wall: 12, barrier: 'pegs', bCount: 5, bSpeed: 0,
       gravity: 2900, bounce: 0.88, startSpeed: 600, ballSize: 22, tempo: 1,
       split: 'barrier', splitChance: 40, maxBalls: 280, spread: 44, shrink: true,
       palette: 'candy', colorMode: 'hit', trail: 32, bg: 'grid', target: 280,
-      hudTitle: 'JEDER PIN TEILT', scale: 'major' } },
+      hudTitle: 'JEDER PIN TEILT', melSrc: 'builtin', melPick: 'entchen', instrument: 'blip' } },
     { id: 'mixer', name: 'Mixer', patch: {
       shape: 'circle', size: 0.9, spin: 18, wall: 16, barrier: 'spinner', bCount: 3, bSpeed: 120,
       gravity: 1700, bounce: 1.03, startSpeed: 900, ballSize: 24, tempo: 1,
       split: 'chance', splitChance: 12, maxBalls: 200, spread: 26, shrink: true,
       palette: 'lava', colorMode: 'flow', trail: 72, bg: 'studio', target: 200,
-      hudTitle: 'MIXER LÄUFT', scale: 'minor' } },
+      hudTitle: 'MIXER LÄUFT', melSrc: 'builtin', melPick: 'bergkoenig', instrument: 'pluck' } },
     { id: 'tunnel', name: 'Ringtunnel', patch: {
       shape: 'circle', size: 0.95, spin: 0, wall: 14, barrier: 'rings', bCount: 5, bSpeed: 85,
       gravity: 2200, bounce: 1.05, startSpeed: 800, ballSize: 20, tempo: 1,
       split: 'chance', splitChance: 9, maxBalls: 320, spread: 22, shrink: true,
       palette: 'ice', colorMode: 'hit', trail: 68, bg: 'studio', target: 320,
-      hudTitle: 'DURCH ALLE RINGE', scale: 'penta' } },
+      hudTitle: 'DURCH ALLE RINGE', melSrc: 'builtin', melPick: 'carol', instrument: 'glocke' } },
     { id: 'stern', name: 'Sternchaos', patch: {
       shape: 'star5', size: 0.98, spin: -26, wall: 12, barrier: 'orbit', bCount: 4, bSpeed: 70,
       gravity: 2600, bounce: 1.06, startSpeed: 950, ballSize: 24, tempo: 1,
       split: 'chance', splitChance: 24, maxBalls: 240, spread: 40, shrink: true,
       palette: 'sunset', colorMode: 'hit', trail: 60, bg: 'studio', target: 240,
-      hudTitle: 'STERN OHNE AUSGANG', scale: 'penta' } },
+      hudTitle: 'STERN OHNE AUSGANG', melSrc: 'builtin', melPick: 'elise', instrument: 'klavier' } },
     { id: 'herz', name: 'Herzschlag', patch: {
       shape: 'heart', size: 0.98, spin: 0, wall: 15, barrier: 'bars', bCount: 3, bSpeed: 60,
       gravity: 2300, bounce: 1.01, startSpeed: 800, ballSize: 26, tempo: 1,
       split: 'chance', splitChance: 16, maxBalls: 160, spread: 30, shrink: true,
       palette: 'brass', colorMode: 'hit', trail: 58, bg: 'studio', target: 160,
-      hudTitle: 'FÜR DICH', scale: 'major' } },
+      hudTitle: 'FÜR DICH', melSrc: 'builtin', melPick: 'ode', instrument: 'marimba' } },
   ];
 
   function buildPresets() {
@@ -1777,6 +2042,7 @@
       b.setAttribute('aria-pressed', String(b.dataset.preset === p.id));
     }
     paintBackground();
+    refreshMelody();
     reset();
     setRunning(true);
   }
@@ -1789,6 +2055,7 @@
     el('mTime').textContent = world.time.toFixed(1).replace('.', ',') + ' s';
     el('mFps').textContent = String(Math.round(fps));
     el('mSeed').textContent = String(seed).padStart(4, '0');
+    melStatus();
   }
   /* Die Schiene bekommt genau die Höhe, die unter dem Kopf frei ist – so ist
      sie auch ungescrollt vollständig sichtbar und scrollt nur in sich selbst. */
@@ -1883,6 +2150,7 @@
   seed = Math.floor(Math.random() * 9000) + 1000;
   reset();
   refreshRhythm();
+  refreshMelody();
   syncPlay();
   requestAnimationFrame(frame);
 })();
