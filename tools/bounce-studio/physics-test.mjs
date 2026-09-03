@@ -194,3 +194,70 @@ test('Teilung bei Ballkontakt', () => {
   laufen(engine, 300);
   assert.equal(world.balls.length, 1, 'ohne Ballkontakt wurde trotzdem geteilt');
 });
+
+/** Alphakanal einer gefüllten Kreisscheibe – Vorlage für die Bildkollision. */
+function kreisAlpha(gw, gh, r) {
+  const a = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      a[y * gw + x] = Math.hypot(x - (gw - 1) / 2, y - (gh - 1) / 2) <= r ? 255 : 0;
+    }
+  }
+  return a;
+}
+
+test('das Abstandsfeld eines Bildes stimmt mit der Geometrie überein', () => {
+  const gw = 64, gh = 64, r = 20;
+  const mask = engine.maskFromAlpha(kreisAlpha(gw, gh, r), gw, gh);
+  const o = { t: 'img', x: 500, y: 500, w: gw, h: gh, a: 0, om: 0, mask };
+  for (const weg of [0, 6, 12, 20, 26, 31]) {
+    const soll = weg - r;                       // innen negativ, außen positiv
+    for (const winkel of [0, 0.7, 1.9, 3.4, 5.1]) {
+      const ist = engine.sampleSdf(o, 500 + Math.cos(winkel) * weg, 500 + Math.sin(winkel) * weg);
+      assert.ok(Math.abs(ist - soll) < 2.5,
+        'Abstand ' + ist.toFixed(2) + ' statt ' + soll + ' bei Weg ' + weg);
+    }
+  }
+});
+
+test('Bälle prallen an einem Bildhindernis ab', () => {
+  stelle({ barrier: 'none', gravity: 0, split: 'off', ballHit: false, bounce: 1 });
+  const gw = 64, gh = 64, r = 20;
+  const mask = engine.maskFromAlpha(kreisAlpha(gw, gh, r), gw, gh);
+  world.custom.length = 0;
+  world.custom.push({ t: 'img', x: 540, y: 1000, w: 200, h: 200, a: 0, om: 0, mask, img: null });
+  world.balls.length = 0;
+  world.balls.push(ball(350, 1000, 900, 0, 20));
+
+  laufen(engine, 30);
+  const b = world.balls[0];
+  assert.ok(b.vx < 0, 'der Ball ist durch das Bild geflogen: vx=' + b.vx.toFixed(0));
+  const weltR = r * (200 / gw);                 // Bildradius in Weltpixeln
+  assert.ok(Math.hypot(b.x - 540, b.y - 1000) > weltR + b.r - 3, 'der Ball steckt im Bild');
+  world.custom.length = 0;
+});
+
+test('eigene Hindernisse überstehen den Neustart und lenken Bälle ab', () => {
+  stelle({ barrier: 'none', gravity: 2400, split: 'off', startBalls: 1 });
+  world.custom.length = 0;
+  world.custom.push({ t: 'bar', cx: 540, cy: 1250, len: 500, h: 12, a: 0, om: 0 });
+  engine.reset();
+  assert.equal(world.custom.length, 1, 'der Neustart hat das Level gelöscht');
+
+  world.balls.length = 0;
+  world.balls.push(ball(540, 1050, 0, 400, 20));
+  laufen(engine, 25);        // kurz nach dem Aufschlag, noch im Steigen
+  assert.ok(world.balls[0].vy < 0, 'der Balken hat den Ball nicht zurückgeworfen');
+  assert.ok(world.hits > 0, 'der Balken zählte nicht als Treffer');
+  world.custom.length = 0;
+});
+
+test('mehrere Startbälle stehen nebeneinander im Bild', () => {
+  stelle({ startBalls: 8, split: 'off' });
+  assert.equal(world.balls.length, 8);
+  const xs = world.balls.map((b) => b.x);
+  assert.ok(Math.max(...xs) - Math.min(...xs) > 60, 'alle Bälle liegen aufeinander');
+  for (const b of world.balls) {
+    assert.ok(Math.hypot(b.x - 540, b.y - 1000) < world.Rbase, 'Startball außerhalb der Form');
+  }
+});

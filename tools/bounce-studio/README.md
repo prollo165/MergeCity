@@ -24,7 +24,8 @@ Schriftarten kommen aus dem Netz; ohne Verbindung greifen Systemschriften.
 | --- | --- |
 | **Form** | Kreis, Stern, Herz, Kapsel … samt Größe und Eigendrehung. Eine drehende Wand überträgt ihren Schwung auf den Ball. |
 | **Barrieren** | Ringe mit Lücke, Plinko-Pins, rotierende Balken, Kreuz-Spinner, Zickzack, kreisende Kugeln. |
-| **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, Ballgröße, Zeitlupe – und ob die Bälle **voneinander abprallen**. |
+| **Editor** | Eigene Balken, Kreise und **Bilder (PNG/GIF/JPG)** direkt ins Bild setzen, verschieben, drehen, drehen lassen. Level als Datei sichern und laden. |
+| **Physik** | Schwerkraft, Sprungkraft (über 1,00 gewinnt der Ball Energie), Anstoß, **Anzahl der Startbälle**, Ballgröße, Zeitlupe – und ob die Bälle **voneinander abprallen**. |
 | **Multiplikation** | Auslöser (jeder Treffer / Zufall / nur Barrieren / **nur bei Ballkontakt**), Wahrscheinlichkeit, Obergrenze, Streuwinkel. |
 | **Optik** | Palette, Farbwechsel-Modus, Leuchtspur, Funken, Bildwackeln, Hintergrund. |
 | **Einblendung** | Ballzähler, Titelzeile und Zielmarke – alles wird ins Video gerendert. |
@@ -137,6 +138,33 @@ Garantie: Aufschläge exakt auf ein Raster zu zwingen ginge nur, indem man die
 Physik fälscht oder die Wände passend zur Musik konstruiert. Der musikalische
 Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
 
+## Editor
+
+Der Knopf **Bearbeiten** unter der Bühne hält die Simulation an und legt das
+Bild frei: Werkzeug wählen, ins Bild tippen. Es gibt Balken (Strich ziehen),
+Kreise (tippen) und Bilder. Ausgewählte Hindernisse lassen sich verschieben,
+in Größe und Drehung ändern und mit einer Eigendrehung versehen. Alles bleibt
+beim Neustart erhalten – es ist Level, keine Spielsituation – und wird von
+derselben Kollisionsroutine behandelt wie die erzeugten Barrieren.
+
+**Bilder kollidieren entlang ihrer Alphakante.** Beim Laden entsteht aus dem
+Alphakanal ein vorzeichenbehaftetes Abstandsfeld: 96 Rasterzellen in der
+längeren Kante, zweimal Chamfer-Distanztransformation (einmal von den festen,
+einmal von den leeren Pixeln aus), Ergebnis innen negativ, außen positiv. Die
+Kollision liest daraus bilinear den Abstand und aus dem Gefälle die Normale.
+Damit stimmt der Abprall auch an schrägen und ausgefransten Rändern, und ein
+Ball kann in eine Aussparung hineinfallen. Ein randvolles Bild ohne
+Alphakanal wirkt wie ein Rechteck.
+
+Ein **animiertes GIF** bewegt sich im Bild mit: Gezeichnet wird das Einzelbild
+von jetzt. Die Kollisionskante bleibt die vom Zeitpunkt des Ladens – ein
+Abstandsfeld je GIF-Frame wäre für die paar Prozent Genauigkeit zu teuer.
+
+**Level sichern** schreibt eine JSON-Datei mit allen Hindernissen; Bilder
+stecken als Data-URL darin, die Datei ist also für sich vollständig.
+Aufnahmen verlassen den Bearbeiten-Modus automatisch, damit die Hilfsringe
+nicht im Video landen.
+
 ## Aufbau
 
 - `app.html` – die eigentliche Anwendung (Stil, Markup, Engine). Bewusst **ohne**
@@ -153,7 +181,10 @@ Eindruck entsteht darum über die Melodie, nicht über erzwungene Sprungzeiten.
   und dass der Song nur bei Treffern und nie schneller als in Echtzeit
   vorrückt. Für die Ball-Ball-Stöße: dass sie zurückprallen, dass ohne die
   Option nichts abgelenkt wird, dass auch im Gedränge kein Ball tief im
-  anderen steckt und dass der Auslöser „Nur bei Ballkontakt" greift.
+  anderen steckt und dass der Auslöser „Nur bei Ballkontakt" greift. Für den
+  Editor: dass das Abstandsfeld eines Kreisbildes mit der Geometrie
+  übereinstimmt, dass Bälle daran abprallen, dass eigene Hindernisse den
+  Neustart überstehen und dass mehrere Startbälle nebeneinander liegen.
 - `midi-test.mjs` – schneidet `parseMidi` aus `app.html` heraus und prüft es
   gegen selbst gebaute MIDI-Dateien (Oberstimme, Schlagzeugkanal, Running
   Status, RIFF-Vorspann, unbekannte Chunks, Tempowechsel, Format 2,

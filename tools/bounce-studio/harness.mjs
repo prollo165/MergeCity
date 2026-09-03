@@ -47,6 +47,7 @@ function element(id = '') {
     getContext: () => ctx(),
     getBoundingClientRect: () => ({ top: 0, left: 0, width: 400, height: 700 }),
     querySelectorAll: () => [],
+    querySelector: () => element(),
     closest: () => element(),
     remove: noop,
   });
@@ -77,7 +78,7 @@ export async function laden() {
   // Anker mit Ende der Funktion, sonst trifft der Ersatz den Aufruf in frame().
   const anker = '\n  requestAnimationFrame(frame);\n})();';
   const griff = '\n  globalThis.__engine = { world, P, mel, frame, reset, refreshMelody, '
-    + 'predictImpacts, audioResume, noteGap, parseMidi, song, '
+    + 'predictImpacts, audioResume, noteGap, parseMidi, song, maskFromAlpha, sampleSdf, '
     + 'get warp() { return warp; }, get songPos() { return songPos; } };\n})();';
   const patched = code.replace(anker, griff);
   if (patched === code) throw new Error('Startaufruf in app.html nicht gefunden');

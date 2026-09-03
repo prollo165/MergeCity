@@ -264,6 +264,18 @@
   }
   .status.on { color: var(--signal); }
 
+  .ed-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 6px 0 2px; }
+  .ed-tools .btn { padding: 8px 4px; }
+  .ed-tools .btn[aria-pressed="true"] {
+    background: var(--signal); border-color: var(--signal); color: var(--signal-ink);
+  }
+  .ed-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .ed-actions .btn, .ed-actions .filebtn { flex: 1 1 auto; padding: 8px 10px; }
+  .bezel.editing {
+    border-color: var(--signal);
+    box-shadow: 0 0 0 1px var(--signal), 0 22px 44px -26px #000;
+  }
+
   .export-out {
     margin-top: 10px; padding: 10px 11px; border: 1px solid var(--rule);
     border-left: 2px solid var(--signal); border-radius: 6px; background: var(--raised);
@@ -330,6 +342,7 @@
         <button class="btn primary grow" id="btnPlay">Pause</button>
         <button class="btn" id="btnReset">Neustart</button>
         <button class="btn" id="btnSeed">Neuer Seed</button>
+        <button class="btn" id="btnEdit">Bearbeiten</button>
         <button class="btn rec grow" id="btnRec">Aufnahme</button>
       </div>
     </section>
@@ -365,7 +378,7 @@
   const P = {
     shape: 'circle', size: 0.86, spin: 0, wall: 14,
     barrier: 'rings', bCount: 3, bSpeed: 55,
-    gravity: 2400, bounce: 1.0, ballSize: 26, startSpeed: 850, ballHit: false,
+    gravity: 2400, bounce: 1.0, ballSize: 26, startSpeed: 850, ballHit: false, startBalls: 1,
     slide: 1.0, tempo: 1,
     split: 'chance', splitChance: 18, maxBalls: 180, shrink: true, spread: 30,
     palette: 'neon', colorMode: 'hit', trail: 55, glow: true, sparks: true,
@@ -374,6 +387,7 @@
     melSrc: 'builtin', melPick: 'korobeiniki', scale: 'penta',
     instrument: 'marimba', melTrigger: 'all', melRate: 7, volume: 55,
     warp: false, noteLen: 0.5,
+    editSize: 70,
     rhythm: 'off', bpm: 120, songStart: 0, songVol: 80,
     songMode: 'burst', burstLen: 0.28, songTrigger: 'all',
     beatPulse: true, beatColor: true, beatSplit: false, beatSpin: false, beatLock: false,
@@ -472,7 +486,7 @@
   const world = {
     kind: 'circle', R: 470, Rbase: 470, angle: 0, om: 0,
     verts: [], norms: [], inR: 470,
-    barriers: [], balls: [], sparks: [], ripples: [],
+    barriers: [], custom: [], balls: [], sparks: [], ripples: [],
     hits: 0, time: 0, flash: 0, shake: 0, running: true,
     pulse: 0, beats: 0, beatT: 0,
   };
@@ -643,8 +657,13 @@
   }
 
   function updateBarriers(dt) {
-    for (const o of world.barriers) {
-      if (!o.om) continue;
+    for (const o of world.barriers) dreheHindernis(o, dt);
+    for (const o of world.custom) dreheHindernis(o, dt);
+  }
+
+  function dreheHindernis(o, dt) {
+    {
+      if (!o.om) return;
       if (o.orbitR !== undefined) {
         o.phase += o.om * dt;
         o.x = CX + Math.cos(o.phase) * o.orbitR;
@@ -678,12 +697,19 @@
     world.ripples.length = 0;
     world.hits = 0; world.time = 0; world.flash = 0; world.shake = 0; world.angle = 0;
     if (world.kind === 'poly') updateShape();
-    const a = -Math.PI / 2 + rrange(-0.75, 0.75);
-    world.balls.push(spawn(
-      CX + rrange(-40, 40), CY - world.inR * 0.45,
-      Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
-      P.ballSize, 0, rnd() * 360,
-    ));
+    const n = Math.max(1, Math.min(30, P.startBalls | 0));
+    // Mehrere Startbälle stehen nebeneinander, jeder mit eigener Richtung und
+    // eigener Farbe – sonst sähen sie aus wie einer.
+    const breite = Math.min(world.inR * 1.3, n * P.ballSize * 2.8);
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + rrange(-0.75, 0.75);
+      const versatz = n === 1 ? 0 : (i / (n - 1) - 0.5) * breite;
+      world.balls.push(spawn(
+        CX + versatz + rrange(-12, 12), CY - world.inR * 0.45 + rrange(-30, 30),
+        Math.cos(a) * P.startSpeed, Math.sin(a) * P.startSpeed,
+        P.ballSize, i, rnd() * 360,
+      ));
+    }
     lastBeat = null;
     world.beats = 0;
     mel.pos = -1;
@@ -832,7 +858,7 @@
 
   /** Zeiten der nächsten Aufschläge dieses Balls, in Sekunden Simulationszeit. */
   function predictImpacts(b, horizon, max) {
-    const bars = world.barriers;
+    const bars = world.barriers.concat(world.custom);
     const save = {
       x: b.x, y: b.y, vx: b.vx, vy: b.vy, r: b.r, cool: b.cool,
       angle: world.angle, R: world.R, pulse: world.pulse,
@@ -923,14 +949,20 @@
   }
 
   function collideBarriers(b) {
-    const list = world.barriers;
-    for (let k = 0; k < list.length; k++) {
-      const o = list[k];
+    const gen = world.barriers;
+    for (let k = 0; k < gen.length; k++) collideObject(b, gen[k]);
+    const eigen = world.custom;
+    for (let k = 0; k < eigen.length; k++) collideObject(b, eigen[k]);
+  }
+
+  function collideObject(b, o) {
+    {
+      if (o.t === 'img') { collideImage(b, o); return; }
 
       if (o.t === 'peg') {
         const dx = b.x - o.x, dy = b.y - o.y, rr = b.r + o.r;
         const d = Math.hypot(dx, dy);
-        if (d >= rr || d < 1e-6) continue;
+        if (d >= rr || d < 1e-6) return;
         const nx = dx / d, ny = dy / d;
         b.x = o.x + nx * rr; b.y = o.y + ny * rr;
         const sx = o.orbitR ? -o.om * (o.y - CY) : 0;
@@ -948,7 +980,7 @@
         let dx = b.x - qx, dy = b.y - qy;
         let d = Math.hypot(dx, dy);
         const rr = b.r + o.h;
-        if (d >= rr) continue;
+        if (d >= rr) return;
         if (d < 1e-6) { dx = -s; dy = c; d = 1; }
         const nx = dx / d, ny = dy / d;
         b.x = qx + nx * rr; b.y = qy + ny * rr;
@@ -994,6 +1026,113 @@
     }
   }
 
+  /* --- Bilder als Hindernis ----------------------------------------------
+     Ein PNG oder GIF kollidiert entlang seiner Alphakante. Beim Laden wird
+     daraus ein vorzeichenbehaftetes Abstandsfeld gerechnet (innen negativ,
+     außen positiv); die Kollision liest daraus Abstand und Normale ab. Das
+     ist genauer als ein Rechteck und billiger als eine Umrisskurve. */
+  function chamfer(d, gw, gh) {
+    const A = 1, B = 1.41421356;
+    const at = (x, y) => (x < 0 || y < 0 || x >= gw || y >= gh ? 1e6 : d[y * gw + x]);
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        d[i] = Math.min(d[i], at(x - 1, y) + A, at(x, y - 1) + A,
+                        at(x - 1, y - 1) + B, at(x + 1, y - 1) + B);
+      }
+    }
+    for (let y = gh - 1; y >= 0; y--) {
+      for (let x = gw - 1; x >= 0; x--) {
+        const i = y * gw + x;
+        d[i] = Math.min(d[i], at(x + 1, y) + A, at(x, y + 1) + A,
+                        at(x + 1, y + 1) + B, at(x - 1, y + 1) + B);
+      }
+    }
+  }
+
+  /** Abstandsfeld aus einem Alphakanal. Rasterzellen als Einheit. */
+  function maskFromAlpha(alpha, gw, gh, schwelle = 100) {
+    const n = gw * gh, INF = 1e6;
+    const raus = new Float32Array(n), rein = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const fest = alpha[i] > schwelle;
+      raus[i] = fest ? 0 : INF;
+      rein[i] = fest ? INF : 0;
+    }
+    // Außerhalb des Bildes ist leer – sonst hätte ein randvolles Bild kein Innen.
+    for (let x = 0; x < gw; x++) {
+      if (rein[x] === INF) rein[x] = 1;
+      const u = (gh - 1) * gw + x;
+      if (rein[u] === INF) rein[u] = 1;
+    }
+    for (let y = 0; y < gh; y++) {
+      if (rein[y * gw] === INF) rein[y * gw] = 1;
+      const r = y * gw + gw - 1;
+      if (rein[r] === INF) rein[r] = 1;
+    }
+    chamfer(raus, gw, gh);
+    chamfer(rein, gw, gh);
+    const data = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      data[i] = raus[i] > 0 ? Math.min(raus[i], 900) : -Math.min(rein[i], 900);
+    }
+    return { gw, gh, data };
+  }
+
+  function maskFromImage(img, maxDim) {
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const k = maxDim / Math.max(iw, ih);
+    const gw = Math.max(8, Math.round(iw * k)), gh = Math.max(8, Math.round(ih * k));
+    const c = document.createElement('canvas');
+    c.width = gw; c.height = gh;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, gw, gh);
+    const px = g.getImageData(0, 0, gw, gh).data;
+    const alpha = new Uint8Array(gw * gh);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = px[i * 4 + 3];
+    return maskFromAlpha(alpha, gw, gh);
+  }
+
+  /** Abstand an einem Weltpunkt, in Rasterzellen. Außerhalb wächst er mit. */
+  function sampleSdf(o, wx, wy) {
+    const m = o.mask;
+    const ca = Math.cos(-o.a), sa = Math.sin(-o.a);
+    const dx = wx - o.x, dy = wy - o.y;
+    const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+    const rx = (lx / o.w + 0.5) * m.gw - 0.5;
+    const ry = (ly / o.h + 0.5) * m.gh - 0.5;
+    const gx = Math.min(m.gw - 1, Math.max(0, rx));
+    const gy = Math.min(m.gh - 1, Math.max(0, ry));
+    const aussen = Math.hypot(rx - gx, ry - gy);
+    const x0 = gx | 0, y0 = gy | 0;
+    const x1 = Math.min(m.gw - 1, x0 + 1), y1 = Math.min(m.gh - 1, y0 + 1);
+    const fx = gx - x0, fy = gy - y0;
+    const d = m.data;
+    return aussen + d[y0 * m.gw + x0] * (1 - fx) * (1 - fy) + d[y0 * m.gw + x1] * fx * (1 - fy)
+         + d[y1 * m.gw + x0] * (1 - fx) * fy + d[y1 * m.gw + x1] * fx * fy;
+  }
+
+  function collideImage(b, o) {
+    if (!o.mask) return;
+    const rad = Math.hypot(o.w, o.h) * 0.5 + b.r;
+    const ax = b.x - o.x, ay = b.y - o.y;
+    if (ax * ax + ay * ay > rad * rad) return;
+    const s = o.w / o.mask.gw;                     // Weltpixel je Rasterzelle
+    const d = sampleSdf(o, b.x, b.y) * s;
+    if (d >= b.r) return;
+    let nx = sampleSdf(o, b.x + s, b.y) - sampleSdf(o, b.x - s, b.y);
+    let ny = sampleSdf(o, b.x, b.y + s) - sampleSdf(o, b.x, b.y - s);
+    const l = Math.hypot(nx, ny);
+    if (l < 1e-6) return;
+    nx /= l; ny /= l;
+    b.x += nx * (b.r - d); b.y += ny * (b.r - d);
+    const sx = o.om ? -o.om * (b.y - o.y) : 0;
+    const sy = o.om ? o.om * (b.x - o.x) : 0;
+    bounce(b, nx, ny, sx, sy);
+    onHit(b, b.x - nx * b.r, b.y - ny * b.r, 'barrier');
+  }
+
   function onHit(b, x, y, kind) {
     if (predicting) { predictHit = true; return; }
     world.hits++;
@@ -1010,7 +1149,7 @@
     } else {
       playNote(b, kind);
     }
-    playBurst(b, kind);
+    if (P.songTrigger !== 'split') playBurst(b, kind);
     maybeSplit(b, kind);
     // Das Nachziehen aufs Taktraster greift nur bei wenigen Bällen und an der
     // Wand – an rotierenden Barrieren ist die Flugzeit zu unberechenbar.
@@ -1057,6 +1196,7 @@
     c.cool = 0.06;
     c.hits = b.hits;
     world.balls.push(c);
+    if (P.songTrigger === 'split') playBurst(b, 'split');
   }
 
   /* ---------------------------------------------------------------- Effekte */
@@ -1192,29 +1332,11 @@
     ctx.lineWidth = P.wall;
     ctx.stroke();
 
-    // Barrieren
+    // Barrieren und eigene Hindernisse
     ctx.lineCap = 'round';
-    for (const o of world.barriers) {
-      if (o.t === 'peg') {
-        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU);
-        ctx.fillStyle = '#7d97ac'; ctx.fill();
-        ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.52, 0, TAU);
-        ctx.fillStyle = '#e2eaf1'; ctx.fill();
-      } else if (o.t === 'bar') {
-        const c = Math.cos(o.a), s = Math.sin(o.a);
-        const x1 = o.cx - (c * o.len) / 2, y1 = o.cy - (s * o.len) / 2;
-        const x2 = o.cx + (c * o.len) / 2, y2 = o.cy + (s * o.len) / 2;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-        ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-        ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
-      } else {
-        ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
-        ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
-        ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
-        ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
-      }
-    }
+    for (const o of world.barriers) drawObstacle(o);
+    for (const o of world.custom) drawObstacle(o);
+    if (editMode) drawEditor();
 
     // Treffer-Wellen und Funken
     ctx.globalCompositeOperation = 'lighter';
@@ -1246,6 +1368,63 @@
     }
 
     if (P.hud) drawHud(pal);
+  }
+
+  function drawObstacle(o) {
+    if (o.t === 'peg') {
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU);
+      ctx.fillStyle = '#7d97ac'; ctx.fill();
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.52, 0, TAU);
+      ctx.fillStyle = '#e2eaf1'; ctx.fill();
+
+    } else if (o.t === 'bar') {
+      const c = Math.cos(o.a), s = Math.sin(o.a);
+      const x1 = o.cx - (c * o.len) / 2, y1 = o.cy - (s * o.len) / 2;
+      const x2 = o.cx + (c * o.len) / 2, y2 = o.cy + (s * o.len) / 2;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
+
+    } else if (o.t === 'img') {
+      if (!o.img) return;
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.rotate(o.a);
+      // Ein animiertes GIF zeigt hier den Einzelbild-Stand von jetzt – das
+      // Bild bewegt sich also mit, die Kollisionskante bleibt die vom Laden.
+      try { ctx.drawImage(o.img, -o.w / 2, -o.h / 2, o.w, o.h); } catch (e) { /* noch nicht geladen */ }
+      ctx.restore();
+
+    } else {
+      ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
+      ctx.lineWidth = o.h * 2; ctx.strokeStyle = '#5f7d95'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(CX, CY, o.r, o.a, o.a + o.span);
+      ctx.lineWidth = o.h * 0.85; ctx.strokeStyle = '#e2eaf1'; ctx.stroke();
+    }
+  }
+
+  /** Auswahlrahmen, Fangpunkte und die Vorschau beim Balkenziehen. */
+  function drawEditor() {
+    ctx.save();
+    ctx.setLineDash([12, 10]);
+    ctx.lineWidth = 3;
+    for (const o of world.custom) {
+      ctx.strokeStyle = o === selected ? '#e8a33d' : 'rgba(226, 234, 241, .35)';
+      const r = objRadius(o);
+      ctx.beginPath();
+      ctx.arc(objX(o), objY(o), r + 10, 0, TAU);
+      ctx.stroke();
+    }
+    if (drag && drag.start && drag.now) {
+      ctx.strokeStyle = '#e8a33d';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(drag.start.x, drag.start.y);
+      ctx.lineTo(drag.now.x, drag.now.y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function rrect(x, y, w, h, r) {
@@ -1681,6 +1860,7 @@
   function playBurst(b, kind) {
     if (!ac || ac.state !== 'running' || !schnipselModus()) return;
     if (P.songTrigger === 'wall' && kind !== 'wall') return;
+    if (P.songTrigger === 'split' && kind !== 'split') return;
     if (P.songTrigger === 'first' && b !== world.balls[0]) return;
 
     const now = ac.currentTime;
@@ -1872,6 +2052,7 @@
     const type = cands.find((t) => MediaRecorder.isTypeSupported(t));
     if (!type) { exportMsg('Kein unterstütztes Videoformat gefunden.', true); return; }
 
+    if (editMode) setEdit(false);   // sonst lägen die Hilfsringe im Video
     reset();                        // eine Aufnahme beginnt immer sauber von vorn
     setRunning(true);
 
@@ -1949,6 +2130,313 @@
     exportMsg('Download gestartet: ' + name, false, true);
   }
 
+  /* ---------------------------------------------------------------- Editor
+     Eigene Hindernisse liegen in world.custom, überstehen jeden Neustart und
+     laufen durch dieselbe Kollisionsroutine wie die erzeugten Barrieren. */
+  let editMode = false, tool = 'move', selected = null, drag = null, pendingImg = null;
+
+  const objX = (o) => (o.t === 'bar' ? o.cx : o.x);
+  const objY = (o) => (o.t === 'bar' ? o.cy : o.y);
+  const objRadius = (o) => (o.t === 'bar' ? o.len / 2 + o.h
+    : o.t === 'peg' ? o.r : Math.hypot(o.w, o.h) / 2);
+  function setObjPos(o, x, y) {
+    if (o.t === 'bar') { o.cx = x; o.cy = y; } else { o.x = x; o.y = y; }
+  }
+  const objSize = (o) => (o.t === 'peg' ? o.r * 2 : o.t === 'bar' ? o.len : o.w);
+  function setObjSize(o, v) {
+    if (o.t === 'peg') o.r = Math.max(5, v / 2);
+    else if (o.t === 'bar') { o.len = Math.max(20, v); o.h = Math.max(4, v * 0.07); }
+    else { const asp = o.h / o.w; o.w = Math.max(20, v); o.h = o.w * asp; }
+  }
+
+  function toWorld(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+  }
+
+  function pick(p) {
+    for (let i = world.custom.length - 1; i >= 0; i--) {
+      const o = world.custom[i];
+      if (Math.hypot(p.x - objX(o), p.y - objY(o)) <= objRadius(o) + 14) return o;
+    }
+    return null;
+  }
+
+  function select(o) { selected = o; syncEditor(); }
+
+  function removeObj(o) {
+    const i = world.custom.indexOf(o);
+    if (i >= 0) world.custom.splice(i, 1);
+    if (selected === o) selected = null;
+    syncEditor();
+  }
+
+  function edHint(text) {
+    const n = el('edHint');
+    if (n) n.textContent = text;
+  }
+
+  function editDown(e) {
+    if (!editMode) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* nicht überall da */ }
+    const p = toWorld(e);
+    if (tool === 'bar') { drag = { start: p, now: p }; return; }
+    if (tool === 'peg') {
+      select(world.custom[world.custom.push({ t: 'peg', x: p.x, y: p.y, r: Math.max(6, P.editSize / 2), om: 0 }) - 1]);
+      return;
+    }
+    if (tool === 'img') {
+      if (!pendingImg) { edHint('Erst ein Bild laden, dann ins Bild tippen.'); return; }
+      const img = pendingImg.img;
+      const w = P.editSize * 2.4;
+      const h = (w * (img.naturalHeight || 1)) / (img.naturalWidth || 1);
+      select(world.custom[world.custom.push({
+        t: 'img', x: p.x, y: p.y, w, h, a: 0, om: 0,
+        src: pendingImg.src, img, mask: pendingImg.mask,
+      }) - 1]);
+      return;
+    }
+    if (tool === 'erase') { const o = pick(p); if (o) removeObj(o); return; }
+    const o = pick(p);
+    select(o);
+    if (o) drag = { obj: o, dx: objX(o) - p.x, dy: objY(o) - p.y };
+  }
+
+  function editMove(e) {
+    if (!editMode || !drag) return;
+    const p = toWorld(e);
+    if (drag.obj) setObjPos(drag.obj, p.x + drag.dx, p.y + drag.dy);
+    else drag.now = p;
+  }
+
+  function editUp(e) {
+    if (!editMode || !drag) return;
+    if (!drag.obj) {
+      const p = toWorld(e), st = drag.start;
+      const dx = p.x - st.x, dy = p.y - st.y, len = Math.hypot(dx, dy);
+      if (len > 40) {
+        select(world.custom[world.custom.push({
+          t: 'bar', cx: (st.x + p.x) / 2, cy: (st.y + p.y) / 2, len,
+          h: Math.max(5, P.editSize * 0.14), a: Math.atan2(dy, dx), om: 0,
+        }) - 1]);
+      } else {
+        edHint('Für einen Balken einen Strich ziehen.');
+      }
+    }
+    drag = null;
+  }
+
+  function setEdit(on) {
+    editMode = on;
+    const b = el('btnEdit');
+    b.textContent = on ? 'Fertig' : 'Bearbeiten';
+    b.classList.toggle('primary', on);
+    const bezel = document.querySelector('.bezel');
+    if (bezel) bezel.classList.toggle('editing', on);
+    canvas.style.cursor = on ? 'crosshair' : '';
+    if (on) { setRunning(false); edHint(pendingImg ? 'Bild bereit – ins Bild tippen.' : 'Werkzeug wählen und ins Bild tippen.'); }
+    else { selected = null; drag = null; syncEditor(); setRunning(true); }
+  }
+
+  function syncTools() {
+    const box = el('edTools');
+    if (!box) return;
+    for (const b of box.children) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
+  }
+
+  function syncEditor() {
+    const box = el('edSel');
+    if (!box) return;
+    box.hidden = !selected;
+    el('edCount').textContent = world.custom.length
+      ? world.custom.length + (world.custom.length === 1 ? ' Hindernis' : ' Hindernisse')
+      : 'noch nichts gesetzt';
+    if (!selected) return;
+    const gr = Math.round(objSize(selected));
+    el('edSize').value = String(gr);
+    el('edSizeV').textContent = gr + ' px';
+    const rot = Math.round(((selected.a || 0) * 180) / Math.PI);
+    el('edRot').value = String(rot);
+    el('edRotV').textContent = rot + ' °';
+    const spin = Math.round(((selected.om || 0) * 180) / Math.PI);
+    el('edSpin').value = String(spin);
+    el('edSpinV').textContent = spin + ' °/s';
+    el('edRotRow').hidden = selected.t === 'peg';
+  }
+
+  function loadObstacleImage(file) {
+    if (!file) return;
+    edHint('Lese ' + file.name + ' …');
+    const rd = new FileReader();
+    rd.onerror = () => edHint('Die Datei ließ sich nicht lesen.');
+    rd.onload = () => {
+      const img = new Image();
+      img.onerror = () => edHint('Dieses Bild ließ sich nicht laden.');
+      img.onload = () => {
+        let mask = null;
+        try { mask = maskFromImage(img, 96); } catch (err) { mask = null; }
+        pendingImg = { img, src: rd.result, mask };
+        tool = 'img';
+        syncTools();
+        if (!editMode) setEdit(true);
+        edHint(file.name + ' bereit – jetzt ins Bild tippen.'
+          + (mask ? '' : ' (Ohne Alphakanal: Kollision als Rechteck.)'));
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  }
+
+  function levelData() {
+    return {
+      v: 1,
+      objekte: world.custom.map((o) => (o.t === 'img'
+        ? { t: 'img', x: o.x, y: o.y, w: o.w, h: o.h, a: o.a, om: o.om, src: o.src }
+        : o.t === 'bar'
+          ? { t: 'bar', cx: o.cx, cy: o.cy, len: o.len, h: o.h, a: o.a, om: o.om }
+          : { t: 'peg', x: o.x, y: o.y, r: o.r, om: 0 })),
+    };
+  }
+
+  async function saveLevel() {
+    const text = JSON.stringify(levelData());
+    const name = 'prallwerk-level.json';
+    if (dl) {
+      try { await dl.save({ filename: name, data: text }); edHint('Level gesichert.'); }
+      catch (err) { edHint(dlError(err)); }
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    edHint('Level gesichert.');
+  }
+
+  function addLevelObject(roh) {
+    if (roh.t === 'img') {
+      const o = {
+        t: 'img', x: +roh.x, y: +roh.y, w: +roh.w, h: +roh.h,
+        a: +roh.a || 0, om: +roh.om || 0, src: roh.src, img: null, mask: null,
+      };
+      const img = new Image();
+      img.onload = () => {
+        o.img = img;
+        try { o.mask = maskFromImage(img, 96); } catch (err) { /* dann ohne Kollision */ }
+      };
+      img.src = roh.src;
+      world.custom.push(o);
+    } else if (roh.t === 'bar') {
+      world.custom.push({
+        t: 'bar', cx: +roh.cx, cy: +roh.cy, len: +roh.len,
+        h: +roh.h || 8, a: +roh.a || 0, om: +roh.om || 0,
+      });
+    } else if (roh.t === 'peg') {
+      world.custom.push({ t: 'peg', x: +roh.x, y: +roh.y, r: +roh.r || 20, om: 0 });
+    }
+  }
+
+  function loadLevel(file) {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onerror = () => edHint('Die Datei ließ sich nicht lesen.');
+    rd.onload = () => {
+      try {
+        const data = JSON.parse(rd.result);
+        if (!data || !Array.isArray(data.objekte)) throw new Error('Format');
+        world.custom.length = 0;
+        selected = null;
+        for (const roh of data.objekte) addLevelObject(roh);
+        syncEditor();
+        edHint(world.custom.length + ' Hindernisse geladen.');
+      } catch (err) {
+        edHint('Das war keine Prallwerk-Leveldatei.');
+      }
+    };
+    rd.readAsText(file);
+  }
+
+  function editorPanel() {
+    const wrap = document.createElement('div');
+    wrap.innerHTML =
+      '<div class="row"><span class="note">Hindernisse direkt ins Bild setzen. Sie bleiben '
+      + 'beim Neustart erhalten und stoßen die Bälle wie jede Barriere.</span></div>'
+      + '<div class="ed-tools" id="edTools" role="group" aria-label="Werkzeug">'
+      + '<button type="button" class="btn" data-tool="move">Wählen</button>'
+      + '<button type="button" class="btn" data-tool="bar">Balken</button>'
+      + '<button type="button" class="btn" data-tool="peg">Kreis</button>'
+      + '<button type="button" class="btn" data-tool="img">Bild</button>'
+      + '<button type="button" class="btn" data-tool="erase">Weg</button>'
+      + '<button type="button" class="btn" id="edClear">Leeren</button>'
+      + '</div>'
+      + '<label class="filebtn wide" id="edImgBtn" style="margin-top:8px">'
+      + 'Bild laden · PNG GIF JPG<input type="file"></label>'
+      + '<div class="row"><span class="status" id="edHint">Noch kein Bild geladen.</span></div>'
+      + '<div class="row"><span class="status on" id="edCount">noch nichts gesetzt</span></div>'
+      + '<div id="edSel" hidden>'
+      + '<div class="row"><label for="edSize">Größe</label><span class="val" id="edSizeV"></span>'
+      + '<input type="range" id="edSize" class="wide" min="10" max="900" step="2"></div>'
+      + '<div class="row" id="edRotRow"><label for="edRot">Drehung</label><span class="val" id="edRotV"></span>'
+      + '<input type="range" id="edRot" class="wide" min="-180" max="180" step="1"></div>'
+      + '<div class="row"><label for="edSpin">Eigendrehung</label><span class="val" id="edSpinV"></span>'
+      + '<input type="range" id="edSpin" class="wide" min="-180" max="180" step="5"></div>'
+      + '<div class="ed-actions"><button type="button" class="btn" id="edDel">Entfernen</button></div>'
+      + '</div>';
+    return wrap;
+  }
+
+  function levelActions() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ed-actions';
+    wrap.innerHTML = '<button type="button" class="btn" id="edSave">Level sichern</button>'
+      + '<label class="filebtn" id="edLoadBtn">Level laden<input type="file"></label>';
+    return wrap;
+  }
+
+  function wireEditor() {
+    el('edTools').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tool]');
+      if (!b) return;
+      tool = b.dataset.tool;
+      syncTools();
+      if (!editMode) setEdit(true);
+    });
+    el('edClear').addEventListener('click', () => {
+      world.custom.length = 0;
+      selected = null;
+      syncEditor();
+      edHint('Alle eigenen Hindernisse entfernt.');
+    });
+    el('edImgBtn').querySelector('input').addEventListener('change', (e) => {
+      loadObstacleImage(e.target.files && e.target.files[0]);
+      e.target.value = '';
+    });
+    el('edLoadBtn').querySelector('input').addEventListener('change', (e) => {
+      loadLevel(e.target.files && e.target.files[0]);
+      e.target.value = '';
+    });
+    el('edSave').addEventListener('click', saveLevel);
+    el('edDel').addEventListener('click', () => { if (selected) removeObj(selected); });
+    el('edSize').addEventListener('input', (e) => {
+      if (selected) { setObjSize(selected, +e.target.value); syncEditor(); }
+    });
+    el('edRot').addEventListener('input', (e) => {
+      if (selected) { selected.a = (+e.target.value * Math.PI) / 180; syncEditor(); }
+    });
+    el('edSpin').addEventListener('input', (e) => {
+      if (selected) { selected.om = (+e.target.value * Math.PI) / 180; syncEditor(); }
+    });
+    canvas.addEventListener('pointerdown', editDown);
+    canvas.addEventListener('pointermove', editMove);
+    canvas.addEventListener('pointerup', editUp);
+    canvas.addEventListener('pointercancel', () => { drag = null; });
+    el('btnEdit').addEventListener('click', () => setEdit(!editMode));
+    syncTools();
+    syncEditor();
+  }
+
   /* ---------------------------------------------------------------- Bedienung */
   const rebuildAll = () => { buildShape(); buildBarriers(); };
   const rebuildBarriers = () => buildBarriers();
@@ -1989,6 +2477,7 @@
         rng('bounce', 'Sprungkraft', 0.6, 1.12, 0.01, (v) => v.toFixed(2).replace('.', ',')),
         rng('startSpeed', 'Anstoß', 200, 2000, 50, (v) => v + ' px/s'),
         rng('ballSize', 'Ballgröße', 8, 48, 1, px),
+        rng('startBalls', 'Bälle zum Start', 1, 30, 1, (v) => v + (v === 1 ? ' Ball' : ' Bälle')),
         rng('slide', 'Gleiten', 0.9, 1, 0.005, (v) => v.toFixed(3).replace('.', ',')),
         tog('ballHit', 'Bälle prallen voneinander ab'),
         rng('tempo', 'Zeitlupe / Tempo', 0.25, 1.5, 0.05, (v) => v.toFixed(2).replace('.', ',') + '×'),
@@ -2036,6 +2525,14 @@
         tog('hud', 'Zähler zeigen'),
         txt('hudTitle', 'Titelzeile'),
         rng('target', 'Zielmarke', 10, 500, 10, (v) => v + ' Bälle'),
+      ],
+    },
+    {
+      title: 'Editor', hint: 'eigene Hindernisse', id: 'editorMod',
+      rows: [
+        { kind: 'custom', build: editorPanel },
+        rng('editSize', 'Größe für Neues', 10, 300, 2, px),
+        { kind: 'custom', build: levelActions },
       ],
     },
     {
@@ -2092,7 +2589,8 @@
         }),
         rng('burstLen', 'Schnipsellänge', 0.05, 1, 0.01, (v) => Math.round(v * 1000) + ' ms'),
         sel('songTrigger', 'Schnipsel bei', [
-          ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'], ['first', 'Nur dem ersten Ball'],
+          ['all', 'Jedem Treffer'], ['wall', 'Nur Wandtreffern'],
+          ['first', 'Nur dem ersten Ball'], ['split', 'Jeder Teilung'],
         ]),
         rng('songStart', 'Startpunkt im Song', 0, 240, 1, fmtClock, () => { songPos = P.songStart; }),
         rng('songVol', 'Musiklautstärke', 0, 100, 1, (v) => v + ' %', () => {
@@ -2445,6 +2943,7 @@
   /* ---------------------------------------------------------------- Start */
   buildRail();
   buildPresets();
+  wireEditor();
   el('presets').firstElementChild.setAttribute('aria-pressed', 'true');
   setRes(P.outRes);
   reset();
